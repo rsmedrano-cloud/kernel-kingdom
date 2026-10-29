@@ -167,27 +167,26 @@ class Wallpaper:
 
     def _on_key(self, ctrl, keyval, keycode, state):
         name = Gdk.keyval_name(keyval) or ""
-        if name == "Escape" and self.painter.selected_power:
+        if name == "Escape" and (self.painter.selected_power or self.painter.menu_open):
             self.painter.select_power(None)
+            self.painter.toggle_menu(False)
         elif name in ("Escape", "q"):
             self.win.close()
-        elif name in "1234567" and len(name) == 1 and self.painter.show_powers:
+        elif name in "123456789" and len(name) == 1 and self.painter.show_powers:
             key = POWER_KEYS[int(name) - 1]
             self.painter.select_power(None if key == self.painter.selected_power else key)
         elif name in ("f", "F11"):
             self.win.unfullscreen() if self.win.is_fullscreen() else self.win.fullscreen()
         elif name == "h":
-            self.painter.show_hud = not self.painter.show_hud
-            self.painter._ui_dirty = True
+            self.painter.toggle_view("status")
         elif name == "c":
-            self.painter.cycle_chronicle()
+            self.painter.toggle_view("chron")
+        elif name == "r":
+            self.painter.toggle_view("realms")
+        elif name == "m":
+            self.painter.toggle_menu()
         elif name == "e" and not self.layered:          # exportar la historia del día
-            from .. import story
-            st = self.painter.state or {}
-            out = story.export(None, st.get("kingdom"), st.get("era_name", ""))
-            if out:
-                self.painter.toast(ui("story.saved", path=str(out[0]).replace(str(Path.home()), "~")),
-                                   time.monotonic(), secs=6)
+            self._export_story(time.monotonic())
         elif name in ("Page_Up", "Page_Down"):
             self.painter.scroll_panel("chron", 5 if name == "Page_Up" else -5)
         elif name in ("plus", "equal", "KP_Add"):
@@ -205,40 +204,85 @@ class Wallpaper:
         if self.paused or (self._drag and self._drag["moved"]):
             return
         now = time.monotonic()
-        realm = self.painter.hud_realm_at(x / self._base, y / self._base)
-        entry = self.painter.chron_entry_at(x / self._base, y / self._base)
-        power = self.painter.power_at(x / self._base, y / self._base)
-        if realm:                                   # clic en un reino de la lista: ir a verlo
+        p = self.painter
+        ux, uy = x / self._base, y / self._base
+        region = p.ui_region(ux, uy)
+        if region == "menu_btn":                    # abrir / cerrar el menú
+            p.toggle_menu()
+        elif region == "menu":
+            self._menu_action(p.menu_action_at(ux, uy), now)
+        elif region == "chron_dl":
+            self._export_story(now)
+        elif region == "chron_size":
+            p.cycle_chronicle()
+        elif p.menu_open:                           # clic afuera: cierra el menú
+            p.toggle_menu(False)
+        elif realm := p.hud_realm_at(ux, uy):       # clic en un reino de la lista: ir a verlo
             self._focus_realm(realm, now)
-        elif entry:                                 # clic en la crónica: ir a donde pasó
+        elif entry := p.chron_entry_at(ux, uy):     # clic en la crónica: ir a donde pasó
             self._focus_tile(entry["x"], entry["y"], now)
-        elif power:                                 # clic en la barra de poderes
-            self.painter.select_power(None if power == self.painter.selected_power else power)
-        elif self.painter.selected_power:           # con un poder elegido, el clic lo lanza
-            tile = self.painter.pick(x / self._scale, y / self._scale)
+        elif p.selected_power:                      # con un poder elegido, el clic lo lanza
+            tile = p.pick(x / self._scale, y / self._scale)
             if tile:
-                self._send_power(self.painter.selected_power, tile, now)
-            self.painter.select_power(None)
+                self._send_power(p.selected_power, tile, now)
+            p.select_power(None)
         elif n_press == 2 and not self.layered:
             self._zoom_reset()
             return
-        else:
-            self.painter.inspect(x / self._scale, y / self._scale, now, ui_pos=(x / self._base, y / self._base))
+        elif region is None:
+            p.inspect(x / self._scale, y / self._scale, now, ui_pos=(ux, uy))
         self._render()
+
+    def _menu_action(self, action, now: float):
+        p = self.painter
+        if not action:
+            return
+        if action[0] == "toggle":
+            p.toggle_view(action[1])
+        elif action[0] == "power":
+            p.select_power(None if action[1] == p.selected_power else action[1])
+            p.toggle_menu(False)                    # elegido el poder, el menú se cierra para apuntar
+        elif action[0] == "story":
+            self._export_story(now)
+        elif action[0] == "quit":
+            self.win.close()                        # el daemon (el mundo) sigue corriendo aparte
+        elif action[0] == "new_world":
+            if p.confirm_new_until > now:           # segundo clic: confirmado
+                p.confirm_new_until = 0
+                self._send_command({"action": "new_world"})
+                p.toast(ui("world.new_sent"), now)
+                p.toggle_menu(False)
+            else:
+                p.confirm_new_until = now + 5
+                p._ui_dirty = True
+
+    def _export_story(self, now: float):
+        from .. import story
+        st = self.painter.state or {}
+        out = story.export(None, st.get("kingdom"), st.get("era_name", ""))
+        if out:
+            self.painter.toast(ui("story.saved", path=str(out[0]).replace(str(Path.home()), "~")), now, secs=6)
+        else:
+            from ..i18n import tr
+            self.painter.toast(tr("story.empty", date=time.strftime("%d/%m/%Y")), now, ok=False)
 
     def _on_right_click(self, gesture, n_press, x, y):
         if self.painter.selected_power:
             self.painter.select_power(None)
             self._render()
 
-    def _send_power(self, power: str, tile: tuple[int, int], now: float):
-        """Deja el pedido para el daemon (que valida el costo y lo aplica en el próximo tick)."""
+    def _send_command(self, cmd: dict):
+        """Deja un pedido para el daemon (lo procesa en el próximo tick)."""
         folder = paths.commands_dir()
         folder.mkdir(parents=True, exist_ok=True)
         name = folder / f"{time.time_ns()}.json"
         tmp = name.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"power": power, "x": tile[0], "y": tile[1]}))
+        tmp.write_text(json.dumps(cmd))
         tmp.rename(name)
+
+    def _send_power(self, power: str, tile: tuple[int, int], now: float):
+        """El daemon valida el costo y lo aplica en el próximo tick."""
+        self._send_command({"power": power, "x": tile[0], "y": tile[1]})
         self.painter.toast(ui("powers.sent", power=words("powers")[power][0]), now)
 
     # zoom y paneo (modo ventana) ---------------------------------------------
@@ -440,10 +484,20 @@ class Wallpaper:
 
 
 def run(args, cfg: dict):
-    app = Gtk.Application(application_id="dev.kernelkingdom.Wallpaper",
-                          flags=Gio.ApplicationFlags.NON_UNIQUE)
+    # La ventana es una sola: abrirla de nuevo (lanzador o terminal) trae al frente la existente.
+    # Los fondos de pantalla son uno por monitor, así que esos sí pueden ser varios.
+    if args.windowed:
+        app = Gtk.Application(application_id="dev.kernelkingdom.Window", flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+    else:
+        app = Gtk.Application(application_id="dev.kernelkingdom.Wallpaper", flags=Gio.ApplicationFlags.NON_UNIQUE)
     holder = {}
-    app.connect("activate", lambda a: holder.setdefault("wp", Wallpaper(a, args, cfg)))
+
+    def activate(a):
+        if "wp" in holder:
+            holder["wp"].win.present()
+        else:
+            holder["wp"] = Wallpaper(a, args, cfg)
+    app.connect("activate", activate)
     for sig in (signal.SIGINT, signal.SIGTERM):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, app.quit)
     app.run([])

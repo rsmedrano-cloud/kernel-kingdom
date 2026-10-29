@@ -21,12 +21,19 @@ your system (`kernel-kingdom doctor`) and enables autostart with the session
 distro; the installer tells you the exact package command if any is missing.
 
 ```bash
-kernel-kingdom            # daemon + wallpaper on every monitor
-kernel-kingdom window     # borderless window with zoom (works anywhere, even GNOME/X11)
-kernel-kingdom chronicle  # read the whole chronicle
+kernel-kingdom            # wallpaper on every monitor, in the background (the terminal is free right away)
+kernel-kingdom window     # open the window: zoom, powers, realms, chronicle (also from the app launcher)
+kernel-kingdom stop       # stop everything
+kernel-kingdom story      # the story of the day (.md + .txt)
 kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language: auto, en, es)
 kernel-kingdom uninstall
 ```
+
+After installing, **Kernel Kingdom** shows up in your applications menu. The world
+runs as a background service: closing the window (or the terminal) never stops it.
+In the window everything lives under the **Menu** button (top right): which panels
+to show, the Sovereign powers and the world actions; the chronicle has its own
+**Download day** button.
 
 ## What feeds the world
 

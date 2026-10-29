@@ -21,12 +21,19 @@ revisa tu sistema (`kernel-kingdom doctor`) y lo deja arrancando con la sesión
 falta algo, el instalador te dice el comando exacto.
 
 ```bash
-kernel-kingdom            # daemon + wallpaper en todos los monitores
-kernel-kingdom window     # ventana sin bordes, con zoom (funciona en cualquier lado)
-kernel-kingdom chronicle  # la crónica completa
+kernel-kingdom            # fondo de pantalla en todos los monitores, en segundo plano (la terminal queda libre)
+kernel-kingdom window     # abre la ventana: zoom, poderes, reinos, crónica (también desde el lanzador)
+kernel-kingdom stop       # detiene todo
+kernel-kingdom story      # la historia del día (.md + .txt)
 kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (language: auto, es, en)
 kernel-kingdom uninstall
 ```
+
+Después de instalar aparece **Kernel Kingdom** en el menú de aplicaciones. El mundo
+corre como servicio en segundo plano: cerrar la ventana (o la terminal) nunca lo
+detiene. En la ventana todo está en el botón **Menú** (arriba a la derecha): qué
+paneles ver, los poderes del Soberano y las acciones del mundo; la crónica tiene su
+propio botón **Descargar día**.
 
 ## Qué alimenta al mundo
 

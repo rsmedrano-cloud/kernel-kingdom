@@ -40,7 +40,7 @@ SAVE_VERSION = 4
 MILESTONES = (25, 50, 100, 200, 400, 800)
 KEY_MILESTONES = (1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000)
 LANDMARKS = ("oraculo", "arena", "teatro", "taberna", "atalaya", "molino", "granero", "mercado", "herreria")
-POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta")
+POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo")
 NO_SHIELD = {"tower", "mine", "lighthouse", "embassy"}
 
 
@@ -986,6 +986,30 @@ class World:
             self._say("expedicion", "exp.build.start", (x, y), realm=f["realm"], title=the(title))
         else:
             self._say("expedicion", "exp.build.alone", (x, y), title=the(title))
+        return True
+
+    def _power_discordia(self, i, events) -> bool:
+        """El reino elegido le declara la guerra a su vecino más cercano."""
+        f = self._realm_at(i)
+        busy = {w["a"] for w in self.wars.values()} | {w["b"] for w in self.wars.values()}
+        if not f or f["id"] in busy:
+            return False
+        others = [o for o in self.factions.values() if o.get("alive") and o is not f and o["id"] not in busy
+                  and o.get("tiles", 0) >= 5]
+        if not others:
+            return False
+        foe = min(others, key=lambda o: self._dist(self.idx(*f["capital"]), o["capital"]))
+        self._say("poder", "power.discordia", f["capital"], a=f["realm"], b=foe["realm"])
+        self._declare_war(f, foe)
+        return True
+
+    def _power_exodo(self, i, events) -> bool:
+        """El reino elegido abandona su ciudad (queda en ruinas) y funda otra lejos."""
+        f = self._realm_at(i)
+        if not f:
+            return False
+        self._say("poder", "power.exodo", f["capital"], realm=f["realm"])
+        self._rebirth(f, time.time())
         return True
 
     def _power_fiesta(self, i, events) -> bool:

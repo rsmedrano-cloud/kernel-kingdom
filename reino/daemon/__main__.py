@@ -40,6 +40,21 @@ def take_commands() -> list[dict]:
     return out
 
 
+def new_world(world: World, cfg: dict) -> World:
+    """Archiva la isla actual y genera otra (semilla al azar)."""
+    import copy
+    folder = paths.data_dir() / "worlds"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"{time.strftime('%Y-%m-%d_%H%M')}_{world.kingdom}_{world.seed}.json"
+    write_atomic(folder / name, world.to_dict())
+    fresh_cfg = copy.deepcopy(cfg)
+    fresh_cfg["world"]["seed"] = 0
+    fresh = World(fresh_cfg)
+    write_atomic(paths.save_file(), fresh.to_dict())
+    print(f"kernel-kingdom daemon: isla archivada en {folder / name}; nueva semilla {fresh.seed}", file=sys.stderr)
+    return fresh
+
+
 def build_state(world: World, snap: dict, events: list[dict], interval: float) -> dict:
     state = world.to_state()
     state.update(
@@ -108,7 +123,11 @@ def main():
         t0 = time.monotonic()
         snap = probe.sample()
         snap["input"] = inputs.take(snap["dt"] or interval)
-        events = world.step(snap, take_commands())
+        commands = take_commands()
+        if any(c.get("action") == "new_world" for c in commands):
+            world = new_world(world, cfg)
+            commands = []
+        events = world.step(snap, commands)
         story.archive(world.chronicle.take_fresh())        # historia del día, sin límite de entradas
         today = time.strftime("%Y-%m-%d")
         if today != day:                                   # cambió el día: se escribe el relato de ayer

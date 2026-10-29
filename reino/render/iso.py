@@ -27,7 +27,7 @@ WATER, SAND, GRASS, FOREST, HILL, MOUNTAIN = range(6)
 ELEV = {WATER: -2, SAND: 0, GRASS: 0, FOREST: 0, HILL: 3, MOUNTAIN: 7}
 BASE = 3                             # grosor de la losa bajo cada casilla
 MARGIN = 24                          # aire alrededor de la isla en la superficie del mundo
-POWER_KEYS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta")
+POWER_KEYS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo")
 
 
 def rgb(hexstr: str) -> tuple[float, float, float]:
@@ -970,15 +970,18 @@ class Painter:
         self._ui_drawn = None
         self.show_powers = True
         self.window_mode = False          # en la ventana se actúa; el fondo de pantalla es solo para mirar
+        self.view = {"status": True, "realms": False, "chron": True}   # paneles a la vista en la ventana
+        self.menu_open = False
+        self.menu_panel = self.menu_button = None
+        self.chron_buttons: list = []
+        self._menu_rows: list = []
+        self.confirm_new_until = 0.0
         self.hud_scroll = 0
         self.chron_scroll = 0
         self.chron_mode = 1               # 0 oculta, 1 normal, 2 expandida
         self._hud_lines: dict[int, int] = {}
         self._chron_lines: dict[int, dict] = {}
         self._rects: dict[str, tuple] = {}
-        self.powers_panel = None
-        self.power_rects: list[str] = []
-        self._powers_pos = (0, 0)
         self.selected_power: str | None = None
         self._toast = None
         self._power_seen = 0
@@ -1593,10 +1596,14 @@ class Painter:
 
     def _rebuild_ui(self, fw: int, fh: int):
         st = self.state
-        self.hud = self.chron = self.powers_panel = None
-        self.power_rects = []
+        self.hud = self.chron = self.menu_panel = self.menu_button = None
+        self.chron_buttons = []
         if not st:
             return
+        # en la ventana cada panel se prende y apaga desde el menú; el fondo muestra lo de siempre
+        show_status = self.show_hud and (not self.window_mode or self.view["status"])
+        show_realms = not self.window_mode or self.view["realms"]
+        show_chron = self.show_chronicle and (self.chron_mode if not self.window_mode else self.view["chron"])
         m, r, w = st["metrics"], st["resources"], st["weather"]
         act = st.get("activity", {})
         temp = f"  {m['cpu_temp']:.0f}°C" if m.get("cpu_temp") else ""
@@ -1610,15 +1617,17 @@ class Painter:
             (ui("hud.res", gold=r["gold"], stone=r.get("stone", 0), defense=r["defense"], mana=r["mana"]), TEXT, None),
             (ui("hud.souls", procs=m["procs"], births=m.get("births") or 0, deaths=m.get("deaths") or 0,
                 presence=presence), DIM, None),
-        ]
+        ] if show_status else []
         # Reinos: en pie primero (por tamaño), después los caídos. En la ventana se recorren con la rueda.
         realms = sorted(st["factions"], key=lambda f: (not f.get("alive"), -f.get("tiles", 0), f["id"]))
         if not self.window_mode:
             realms = [f for f in realms if f.get("tiles")]
+        if not show_realms:
+            realms = []
         shown = 6
         self.hud_scroll = max(0, min(self.hud_scroll, len(realms) - shown))
         self._hud_lines = {}
-        if self.window_mode:
+        if self.window_mode and realms:
             fallen = sum(1 for f in realms if not f.get("alive"))
             lines.append((ui("hud.realms", alive=len(realms) - fallen, fallen=fallen), GOLD, None))
             if self.hud_scroll:
@@ -1649,12 +1658,13 @@ class Painter:
                                ("plague", "hud.plague", "#9fd06a")):
             if w.get(flag):
                 alerts.append((ui(key), rgb(col)))
-        lines += [(f"!! {t}", c, None) for t, c in alerts]
+        if show_status:
+            lines += [(f"!! {t}", c, None) for t, c in alerts]
         kingdom = st.get("kingdom", "")
-        if self.show_hud:
+        if lines:
             self.hud = _panel(lines, title=ui("hud.title", kingdom=kingdom, era=st.get("era_name") or ""))
 
-        if self.show_chronicle and self.chron_mode and st.get("chronicle"):
+        if show_chron and st.get("chronicle"):
             entries = st["chronicle"]
             expanded = self.window_mode and self.chron_mode == 2
             width = min(560, int(fw * 0.6)) if expanded else min(340, fw // 2 - 12)
@@ -1678,9 +1688,28 @@ class Painter:
                 title += ui("chron.back", n=self.chron_scroll)
             self.chron = _panel(rows, width=width, title=title)
 
-        if self.show_powers and self.window_mode and st.get("powers"):
-            names, res = words("powers"), words("resources")
-            rows = []
+        if self.window_mode:
+            self.chron_buttons = [("chron_dl", _panel([(ui("chron.download"), GOLD, None)])),
+                                  ("chron_size", _panel([(ui("chron.smaller") if self.chron_mode == 2
+                                                          else ui("chron.bigger"), TEXT, None)]))] if self.chron else []
+            self.menu_button = _panel([(("▲ " if self.menu_open else "▼ ") + ui("menu.button"), GOLD, None)])
+            if self.menu_open:
+                self.menu_panel = self._build_menu(st)
+
+    def _build_menu(self, st: dict):
+        """Desplegable del botón Menú: qué paneles se ven, los poderes y acciones del mundo."""
+        names, res, r = words("powers"), words("resources"), st["resources"]
+        rows, self._menu_rows = [], []
+
+        def add(text, col, action):
+            rows.append((text, col, None))
+            self._menu_rows.append(action)
+
+        add(ui("menu.view"), GOLD, None)
+        for key in ("status", "realms", "chron"):
+            add(f"  [{'x' if self.view[key] else ' '}] {ui('menu.' + key)}", TEXT, ("toggle", key))
+        if self.show_powers and st.get("powers"):
+            add(ui("menu.powers"), GOLD, None)
             for k, key in enumerate(POWER_KEYS):
                 cost = st["powers"].get(key)
                 if not cost:
@@ -1688,9 +1717,31 @@ class Painter:
                 afford = all(r.get(c, 0) >= v for c, v in cost.items())
                 price = ", ".join(f"{v} {res[c]}" for c, v in cost.items())
                 col = GOLD if key == self.selected_power else (TEXT if afford else (0.42, 0.43, 0.46))
-                rows.append((f"{k + 1} {names[key][0]:<10} {price}", col, None))
-                self.power_rects.append(key)
-            self.powers_panel = _panel(rows, title=ui("powers.title"))
+                add(f"  {k + 1} {names[key][0]:<10} {price}", col, ("power", key))
+        add(ui("menu.world"), GOLD, None)
+        add(f"  {ui('menu.story')}", TEXT, ("story",))
+        confirming = self.confirm_new_until > time.monotonic()
+        add(f"  {ui('menu.new_confirm') if confirming else ui('menu.new')}",
+            rgb("#ff9a8a") if confirming else TEXT, ("new_world",))
+        add(f"  {ui('menu.quit')}", TEXT, ("quit",))
+        add(ui("menu.help"), DIM, None)
+        return _panel(rows)
+
+    def menu_action_at(self, ux: float, uy: float):
+        """Acción del renglón del menú bajo el punto, o None."""
+        if self.ui_region(ux, uy) != "menu":
+            return None
+        _, y0, _, _ = self._rects["menu"]
+        row = int((uy - y0 - 3) // 11)
+        return self._menu_rows[row] if 0 <= row < len(self._menu_rows) else None
+
+    def toggle_menu(self, open_: bool | None = None):
+        self.menu_open = (not self.menu_open) if open_ is None else open_
+        self._ui_dirty = True
+
+    def toggle_view(self, key: str):
+        self.view[key] = not self.view[key]
+        self._ui_dirty = True
 
     def ui_region(self, ux: float, uy: float) -> str | None:
         """¿Qué panel hay bajo el punto (coordenadas de UI)? hud, chron, powers o None."""
@@ -1721,8 +1772,11 @@ class Painter:
         self._ui_dirty = True
 
     def cycle_chronicle(self):
-        """Normal -> expandida -> oculta -> normal."""
-        self.chron_mode = {1: 2, 2: 0, 0: 1}[self.chron_mode]
+        """Crónica normal <-> grande (en el fondo de pantalla: normal <-> oculta)."""
+        if self.window_mode:
+            self.chron_mode = 1 if self.chron_mode == 2 else 2
+        else:
+            self.chron_mode = 0 if self.chron_mode else 1
         self.chron_scroll = 0
         self._ui_dirty = True
 
@@ -1733,14 +1787,9 @@ class Painter:
         self.pan = [wx - ww / 2, wy - wh / 2]
 
     def power_at(self, ux: float, uy: float) -> str | None:
-        """¿Qué poder hay bajo el punto (coordenadas de la capa de UI)?"""
-        if not self.powers_panel:
-            return None
-        px, py = self._powers_pos
-        row = int((uy - py - 3 - 13) // 11)          # 13 = alto del título del panel
-        if px <= ux <= px + self.powers_panel.get_width() and 0 <= row < len(self.power_rects):
-            return self.power_rects[row]
-        return None
+        """¿Qué poder del menú hay bajo el punto (coordenadas de la capa de UI)?"""
+        act = self.menu_action_at(ux, uy)
+        return act[1] if act and act[0] == "power" else None
 
     def select_power(self, key: str | None):
         self.selected_power = key
@@ -1924,7 +1973,7 @@ class Painter:
         return self.ui_surf, True
 
     def _ui_key(self, now: float):
-        return (id(self.hud), id(self.chron), id(self.powers_panel), id(self._toast),
+        return (id(self.hud), id(self.chron), id(self.menu_panel), id(self.menu_button), id(self._toast),
                 id(self.card["surf"]) if self.card else None,
                 round(min(1.0, self.card["until"] - now), 1) if self.card else None)
 
@@ -1962,11 +2011,25 @@ class Painter:
             ctx.set_source_surface(self.chron, 6, y)
             ctx.paint()
             self._rects["chron"] = (6, y, self.chron.get_width(), self.chron.get_height())
-        if self.powers_panel:
-            self._powers_pos = (fw - self.powers_panel.get_width() - 6, fh - self.powers_panel.get_height() - 6)
-            ctx.set_source_surface(self.powers_panel, *self._powers_pos)
+        if self.chron and self.chron_buttons:                 # botones de la crónica, sobre su borde derecho
+            cx, cy, cw, _ = self._rects["chron"]
+            x = cx + cw
+            for name, btn in reversed(self.chron_buttons):
+                x -= btn.get_width()
+                ctx.set_source_surface(btn, x, cy - btn.get_height() - 2)
+                ctx.paint()
+                self._rects[name] = (x, cy - btn.get_height() - 2, btn.get_width(), btn.get_height())
+                x -= 3
+        if self.menu_button:                                  # botón Menú arriba a la derecha
+            bx = fw - self.menu_button.get_width() - 6
+            ctx.set_source_surface(self.menu_button, bx, 6)
             ctx.paint()
-            self._rects["powers"] = (*self._powers_pos, self.powers_panel.get_width(), self.powers_panel.get_height())
+            self._rects["menu_btn"] = (bx, 6, self.menu_button.get_width(), self.menu_button.get_height())
+            if self.menu_panel:
+                mx, my = fw - self.menu_panel.get_width() - 6, 6 + self.menu_button.get_height() + 2
+                ctx.set_source_surface(self.menu_panel, mx, my)
+                ctx.paint()
+                self._rects["menu"] = (mx, my, self.menu_panel.get_width(), self.menu_panel.get_height())
         hint = self._toast[0] if self._toast else (
             _panel([(ui("powers.pick", power=words("powers")[self.selected_power][0]), GOLD, None)])
             if self.selected_power else None)

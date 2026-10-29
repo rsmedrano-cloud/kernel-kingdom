@@ -1,8 +1,9 @@
 """`kernel-kingdom`: un solo comando para todo.
 
-    kernel-kingdom                 # = run: daemon + wallpaper en todos los monitores
-    kernel-kingdom window          # en una ventana sin bordes (con zoom)
-    kernel-kingdom install         # arranque automático con la sesión (systemd --user) y lo inicia
+    kernel-kingdom                 # daemon + wallpaper en todos los monitores, en segundo plano
+    kernel-kingdom window          # abre la ventana (zoom, poderes) y devuelve la terminal
+    kernel-kingdom stop            # detiene todo
+    kernel-kingdom install         # lanzador en el menú + arranque automático con la sesión
     kernel-kingdom uninstall
     kernel-kingdom doctor          # revisa dependencias y soporte del compositor
     kernel-kingdom config          # crea ~/.config/kernel-kingdom/config.toml para editar
@@ -74,31 +75,114 @@ def monitors() -> list[str]:
     return [n for n in names.values() if n]
 
 
-def _spawn(module: str, *args: str) -> subprocess.Popen:
-    return subprocess.Popen([sys.executable, "-m", module, *args])
+APP_ID = "dev.kernelkingdom.Window"
+DEV_ROOT = Path(__file__).resolve().parent.parent
+IS_CHECKOUT = (DEV_ROOT / "pyproject.toml").exists() and (DEV_ROOT / "reino").is_dir()
+DATA = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
+
+def _logs() -> Path:
+    d = paths.save_file().parent / "logs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _pidfile(name: str) -> Path:
+    d = paths.state_file().parent / "pids"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{name}.pid"
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _detach(name: str, module: str, *args: str) -> int:
+    """Lanza un proceso separado de la terminal (sin salida en pantalla: va a un log)."""
+    log = open(_logs() / f"{name}.log", "a")
+    proc = subprocess.Popen([sys.executable, "-m", module, *args], stdin=subprocess.DEVNULL, stdout=log,
+                            stderr=log, start_new_session=True, cwd=DEV_ROOT if IS_CHECKOUT else None)
+    _pidfile(name).write_text(str(proc.pid))
+    return proc.pid
+
+
+def _running(name: str) -> bool:
+    f = _pidfile(name)
+    return f.exists() and f.read_text().strip().isdigit() and _alive(int(f.read_text()))
+
+
+def _unit_active(unit: str) -> bool:
+    return shutil.which("systemctl") is not None and subprocess.run(
+        ["systemctl", "--user", "is-active", "--quiet", unit]).returncode == 0
+
+
+def _unit_installed(unit: str) -> bool:
+    return (UNIT_DIR / unit).exists()
+
+
+def ensure_daemon():
+    """El mundo corre aparte de cualquier ventana o terminal: servicio de systemd si
+    está instalado; si no, un proceso suelto en segundo plano."""
+    st = paths.state_file()
+    if st.exists() and time.time() - st.stat().st_mtime < 10:
+        return
+    if _unit_installed("kernel-kingdom-daemon.service"):
+        _systemctl("start", "kernel-kingdom-daemon.service", check=False)
+    elif not _running("daemon"):
+        _detach("daemon", "reino.daemon")
+        time.sleep(1.5)                       # que exista el primer estado
 
 
 def cmd_run(args):
+    """Fondo de pantalla en todos los monitores, en segundo plano. La terminal queda libre."""
+    if args.foreground:
+        return _foreground(args)
+    ensure_daemon()
     targets = args.monitors.split(",") if args.monitors and args.monitors != "all" else (monitors() or [None])
-    procs = [_spawn("reino.daemon")]
-    time.sleep(1.5)                       # que exista el primer estado
     for m in targets:
-        procs.append(_spawn("reino.render", *(["--monitor", m] if m else [])))
-    _wait(procs)
+        unit = f"kernel-kingdom-render@{m}.service"
+        if m and _unit_installed("kernel-kingdom-render@.service"):
+            _systemctl("start", unit, check=False)
+        elif not _running(f"render-{m}"):
+            _detach(f"render-{m}", "reino.render", *(["--monitor", m] if m else []))
+    print(ui("cli.started", monitors=", ".join(t or "?" for t in targets)))
 
 
 def cmd_window(args):
-    procs = [] if _daemon_running() else [_spawn("reino.daemon")]
-    procs.append(_spawn("reino.render", "--windowed"))
-    _wait(procs)
+    """Abre la ventana y devuelve la terminal. Cerrar la ventana no detiene el mundo."""
+    ensure_daemon()
+    if args.foreground:
+        os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--windowed"])
+    _detach("window", "reino.render", "--windowed")
+    print(ui("cli.window"))
 
 
-def _daemon_running() -> bool:
-    st = paths.state_file()
-    return st.exists() and time.time() - st.stat().st_mtime < 10
+def cmd_stop(args):
+    for name in ("window", *(p.stem for p in (paths.state_file().parent / "pids").glob("render-*.pid")), "daemon"):
+        f = _pidfile(name)
+        if f.exists() and f.read_text().strip().isdigit() and _alive(int(f.read_text())):
+            os.kill(int(f.read_text()), signal.SIGTERM)
+        f.unlink(missing_ok=True)
+    if shutil.which("systemctl"):
+        out = subprocess.run(["systemctl", "--user", "list-units", "--plain", "--no-legend", "kernel-kingdom*"],
+                             capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            _systemctl("stop", line.split()[0], check=False)
+    print(ui("cli.stopped"))
 
 
-def _wait(procs):
+def _foreground(args):
+    """Modo desarrollo: todo en esta terminal, con logs; Ctrl+C corta."""
+    targets = args.monitors.split(",") if args.monitors and args.monitors != "all" else (monitors() or [None])
+    procs = [subprocess.Popen([sys.executable, "-m", "reino.daemon"])]
+    time.sleep(1.5)
+    for m in targets:
+        procs.append(subprocess.Popen([sys.executable, "-m", "reino.render", *(["--monitor", m] if m else [])]))
+
     def stop(*_):
         for p in procs:
             p.terminate()
@@ -117,20 +201,41 @@ def _systemctl(*a, check=True):
     return subprocess.run(["systemctl", "--user", *a], check=check)
 
 
+def install_launcher():
+    """Lanzador 'Kernel Kingdom' en el menú de aplicaciones (abre la ventana)."""
+    from . import icon
+    icon.make(DATA / "icons" / "hicolor" / "256x256" / "apps" / "kernel-kingdom.png")
+    apps = DATA / "applications"
+    apps.mkdir(parents=True, exist_ok=True)
+    path_line = f"Path={DEV_ROOT}\n" if IS_CHECKOUT else ""
+    (apps / f"{APP_ID}.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Kernel Kingdom\n"
+        "Comment=Your computer as a pixel-art kingdom / Tu computadora como un reino\n"
+        f"Exec={sys.executable} -m reino window\n{path_line}Icon=kernel-kingdom\nTerminal=false\n"
+        f"Categories=Game;Simulation;\nStartupWMClass={APP_ID}\nKeywords=wallpaper;kingdom;reino;\n")
+    if shutil.which("update-desktop-database"):
+        subprocess.run(["update-desktop-database", str(apps)], check=False, capture_output=True)
+
+
 def cmd_install(args):
+    install_launcher()
     if not shutil.which("systemctl"):
-        sys.exit(ui("cli.no_systemctl"))
+        print(ui("cli.no_systemctl"))
+        return
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    (UNIT_DIR / "kernel-kingdom-daemon.service").write_text(DAEMON_UNIT.format(python=sys.executable))
-    (UNIT_DIR / "kernel-kingdom-render@.service").write_text(RENDER_UNIT.format(python=sys.executable))
-    targets = args.monitors.split(",") if args.monitors and args.monitors != "all" else monitors()
-    if not targets:
-        sys.exit(ui("cli.no_monitors"))
+    workdir = f"WorkingDirectory={DEV_ROOT}\n" if IS_CHECKOUT else ""
+    (UNIT_DIR / "kernel-kingdom-daemon.service").write_text(
+        DAEMON_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
+    (UNIT_DIR / "kernel-kingdom-render@.service").write_text(
+        RENDER_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
+    cmd_stop(args)                                        # lo que hubiera suelto, pasa a manos de systemd
     _systemctl("daemon-reload")
     _systemctl("enable", "--now", "kernel-kingdom-daemon.service")
+    targets = [] if args.no_wallpaper else (args.monitors.split(",") if args.monitors != "all" else monitors())
     for m in targets:
         _systemctl("enable", "--now", f"kernel-kingdom-render@{m}.service")
-    print(ui("cli.installed", monitors=", ".join(targets)))
+    print(ui("cli.installed", monitors=", ".join(targets)) if targets else ui("cli.installed_world"))
+    print(ui("cli.launcher"))
     print(ui("cli.logs"))
 
 
@@ -147,6 +252,8 @@ def cmd_uninstall(args):
     for name in units:
         (UNIT_DIR / name).unlink(missing_ok=True)
     _systemctl("daemon-reload", check=False)
+    (DATA / "applications" / f"{APP_ID}.desktop").unlink(missing_ok=True)
+    (DATA / "icons" / "hicolor" / "256x256" / "apps" / "kernel-kingdom.png").unlink(missing_ok=True)
     print(ui("cli.uninstalled", path=paths.save_file()))
 
 
@@ -235,11 +342,15 @@ def cmd_config(args):
 def main():
     ap = argparse.ArgumentParser(prog="kernel-kingdom", description="Live wallpaper / idle game fed by your system.")
     sub = ap.add_subparsers(dest="cmd")
-    run = sub.add_parser("run", help="daemon + wallpaper (default)")
+    run = sub.add_parser("run", help="daemon + wallpaper en segundo plano (default)")
     run.add_argument("--monitors", default="all", help="all, o DP-1,HDMI-A-1")
-    sub.add_parser("window", help="ventana sin bordes, con zoom")
-    inst = sub.add_parser("install", help="arranque automático (systemd --user)")
+    run.add_argument("-f", "--foreground", action="store_true", help="en esta terminal, con logs (desarrollo)")
+    win = sub.add_parser("window", help="abre la ventana (con zoom y poderes) y devuelve la terminal")
+    win.add_argument("-f", "--foreground", action="store_true")
+    sub.add_parser("stop", help="detiene todo (ventana, wallpaper y daemon)")
+    inst = sub.add_parser("install", help="lanzador en el menú + arranque automático (systemd --user)")
     inst.add_argument("--monitors", default="all")
+    inst.add_argument("--no-wallpaper", action="store_true", help="solo el mundo y el lanzador, sin fondo de pantalla")
     sub.add_parser("uninstall")
     sub.add_parser("doctor")
     sub.add_parser("config", help="crea/muestra tu config de usuario")
@@ -258,7 +369,7 @@ def main():
 
     if args.cmd in (None, "run"):
         if args.cmd is None:
-            args.monitors = "all"
+            args.monitors, args.foreground = "all", False
         return cmd_run(args)
     if args.cmd == "chronicle":
         os.execv(sys.executable, [sys.executable, "-m", "reino.daemon", "--chronicle"])
@@ -266,7 +377,7 @@ def main():
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--snapshot", args.png, *args.extra])
     if args.cmd == "story":
         return cmd_story(args)
-    return {"window": cmd_window, "install": cmd_install, "uninstall": cmd_uninstall,
+    return {"window": cmd_window, "stop": cmd_stop, "install": cmd_install, "uninstall": cmd_uninstall,
             "doctor": cmd_doctor, "config": cmd_config}[args.cmd](args)
 
 

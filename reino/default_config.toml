@@ -137,6 +137,8 @@ heroe = { mana = 40 }
 bosque = { gold = 20 }
 faro = { gold = 60, stone = 30 }
 fiesta = { gold = 40 }
+discordia = { mana = 30 }
+exodo = { mana = 25 }
 
 # ---------------------------------------------------------------------------
 [render]
