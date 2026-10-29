@@ -208,14 +208,18 @@ class World:
         return not (self.owner[i] or self.road[i] or self.wall[i] or self.burn[i] or self.lava[i]
                     or self.ruin[i] or i in self._struct_tiles)
 
-    def _place(self, key: str, prefer_hill: bool, coastal: bool = False) -> list[int]:
-        """Ubicación determinista (misma clave -> mismo lugar) lejos de los demás."""
+    def _place(self, key: str, prefer_hill: bool, coastal: bool = False, avoid=None) -> list[int]:
+        """Ubicación determinista (misma clave -> mismo lugar) lejos de los demás.
+        `avoid`: un punto del que hay que alejarse (las ruinas de una capital vieja)."""
         rng = rng_for(self.seed, key)
         taken = [f["capital"] for f in self.factions.values()]
         taken += [[s["x"], s["y"]] for s in self.structures.values()]
         land = [i for i, t in enumerate(self.terrain)
                 if t in LAND and not self.wall[i] and i not in self._struct_tiles and not self.owner[i]
-                and (not coastal or any(self.terrain[j] == WATER for j in self.neighbors(i)))]
+                and not self.ruin[i] and (not coastal or any(self.terrain[j] == WATER for j in self.neighbors(i)))]
+        if avoid:
+            far = [i for i in land if self._dist(i, avoid) >= 14]
+            land = far or land
         if not land:
             land = [i for i, t in enumerate(self.terrain) if t in LAND]
         best, best_score = land[0], -1.0
@@ -431,8 +435,7 @@ class World:
                 else:
                     self._say("fundacion", "found.realm", f["capital"], **self._realm_kw(f))
             elif not f.get("alive"):
-                f["ruler"] = self.lore.new_ruler(f, now)
-                self._say("dinastia", "dyn.reborn", f["capital"], **self._realm_kw(f))
+                self._rebirth(f, now)
             elif abs(g["since"] - f.get("since", g["since"])) > 5:   # reinició el proceso raíz
                 old = self.lore.ruler_str(f["ruler"])
                 f["ruler"] = self.lore.new_ruler(f, now)
@@ -509,6 +512,23 @@ class World:
 
         for (att, dfn), lost in conquests.items():
             self._battle(by_id[att], by_id[dfn], lost)
+
+    def _rebirth(self, f: dict, now: float):
+        """El proceso volvió: el reino renace, pero no sobre sus ruinas. Lo que le
+        quedaba se abandona y los exiliados fundan una capital nueva lejos."""
+        old = list(f["capital"])
+        for i, o in enumerate(self.owner):
+            if o == f["id"]:
+                self.owner[i], self.level[i], self.bld[i] = 0, 0, B.NONE
+                self.ruin[i] = self.cfg["browsers_rules"]["ruin_ticks"]
+        f["rebirths"] = f.get("rebirths", 0) + 1
+        f["capital"] = self._place(f"{f['kind']}:{f['name']}:{f['rebirths']}", prefer_hill=False, avoid=old)
+        f["specials"] = {}
+        f["tiles"] = 0
+        f["bonus"] = 0
+        f["ruler"] = self.lore.new_ruler(f, now)
+        self._say("dinastia", "dyn.reborn", f["capital"], place=self.lore.place(f"capital:{f['name']}:{f['rebirths']}"),
+                  **self._realm_kw(f))
 
     def _claimable(self, i: int, f: dict, by_id: dict) -> bool:
         if self.terrain[i] not in LAND or self.wall[i] or self.burn[i] or self.lava[i]:

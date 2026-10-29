@@ -74,6 +74,23 @@ class WorldTest(unittest.TestCase):
         self.assertGreater(sum(1 for r in self.world.ruin if r), 0)
         self.assertIn("caida", self.kinds())
 
+    def test_reopened_app_is_reborn_elsewhere(self):
+        s = snap(browsers={"chrome": proc(2000), "zen": proc(1500)})
+        self.run_ticks(30, s)
+        f = self.world.factions["chrome"]
+        old_cap = list(f["capital"])
+        self.run_ticks(3, snap(browsers={"zen": proc(1500)}))       # se cerró chrome: el reino cae
+        self.assertFalse(f["alive"])
+        self.run_ticks(1, s)                                          # y volvió
+        self.assertTrue(f["alive"])
+        self.assertGreaterEqual(self.world._dist(self.world.idx(*f["capital"]), old_cap), 14)
+        mine = [i for i, o in enumerate(self.world.owner) if o == f["id"]]
+        self.assertTrue(all(self.world._dist(i, old_cap) >= 10 for i in mine))   # nada junto a las ruinas
+        self.assertGreater(self.world.ruin[self.world.idx(*old_cap)], 0)
+        self.assertIn("dyn.reborn", [e.get("k") for e in self.world.chronicle.entries])
+        self.run_ticks(30, s)
+        self.assertGreater(f["tiles"], 0)                             # la ciudad nueva crece allá
+
     def test_restart_is_a_new_dynasty(self):
         self.run_ticks(3, snap(browsers={"zen": proc(1000, since=100)}))
         self.run_ticks(1, snap(browsers={"zen": proc(1000, since=900)}))   # el proceso raíz cambió
