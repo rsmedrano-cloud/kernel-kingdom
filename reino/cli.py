@@ -20,7 +20,8 @@ import sys
 import time
 from pathlib import Path
 
-from . import paths
+from . import config, i18n, paths
+from .i18n import ui
 
 UNIT_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "systemd" / "user"
 DAEMON_UNIT = """[Unit]
@@ -118,19 +119,19 @@ def _systemctl(*a, check=True):
 
 def cmd_install(args):
     if not shutil.which("systemctl"):
-        sys.exit("systemctl no está disponible: usá `kernel-kingdom run` desde el autostart de tu escritorio.")
+        sys.exit(ui("cli.no_systemctl"))
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     (UNIT_DIR / "kernel-kingdom-daemon.service").write_text(DAEMON_UNIT.format(python=sys.executable))
     (UNIT_DIR / "kernel-kingdom-render@.service").write_text(RENDER_UNIT.format(python=sys.executable))
     targets = args.monitors.split(",") if args.monitors and args.monitors != "all" else monitors()
     if not targets:
-        sys.exit("No encontré monitores Wayland. ¿Estás dentro de la sesión gráfica?")
+        sys.exit(ui("cli.no_monitors"))
     _systemctl("daemon-reload")
     _systemctl("enable", "--now", "kernel-kingdom-daemon.service")
     for m in targets:
         _systemctl("enable", "--now", f"kernel-kingdom-render@{m}.service")
-    print(f"kernel-kingdom instalado: daemon + wallpaper en {', '.join(targets)}.")
-    print("Ver logs:  journalctl --user -u 'kernel-kingdom*' -f")
+    print(ui("cli.installed", monitors=", ".join(targets)))
+    print(ui("cli.logs"))
 
 
 def cmd_uninstall(args):
@@ -146,7 +147,7 @@ def cmd_uninstall(args):
     for name in units:
         (UNIT_DIR / name).unlink(missing_ok=True)
     _systemctl("daemon-reload", check=False)
-    print(f"Listo. Tu mundo sigue guardado en {paths.save_file()} (borralo si querés empezar de cero).")
+    print(ui("cli.uninstalled", path=paths.save_file()))
 
 
 def cmd_doctor(args):
@@ -157,7 +158,7 @@ def cmd_doctor(args):
         ok &= bool(cond)
         print(f"  {'✔' if cond else '✘'} {label}" + ("" if cond or not hint else f"\n      → {hint}"))
 
-    print("kernel-kingdom doctor")
+    print(ui("cli.doctor"))
     check(f"Python {sys.version.split()[0]} (>= 3.11)", sys.version_info >= (3, 11))
     try:
         import psutil  # noqa: F401
@@ -178,7 +179,7 @@ def cmd_doctor(args):
     except (ImportError, ValueError):
         check("gtk4-layer-shell", False, _deps_hint())
     wayland = bool(os.environ.get("WAYLAND_DISPLAY"))
-    check("sesión Wayland", wayland, "el modo fondo de pantalla necesita Wayland; en X11 usá `kernel-kingdom window`")
+    check(ui("cli.wayland"), wayland, ui("cli.wayland_hint"))
     if wayland:
         from .wl import Connection
         found = set()
@@ -187,15 +188,13 @@ def cmd_doctor(args):
             c.roundtrip()
         except (OSError, ConnectionError, TimeoutError):
             pass
-        check("wlr-layer-shell (fondo de pantalla)", "zwlr_layer_shell_v1" in found,
-              "tu compositor no lo soporta (GNOME): usá `kernel-kingdom window`")
-        check("detección de ventanas que tapan el fondo (pausa)", "zcosmic_toplevel_info_v1" in found,
-              "por ahora solo en COSMIC; en otros compositores el fondo no se pausa solo")
-        check("presencia del usuario (ext_idle_notifier_v1)", "ext_idle_notifier_v1" in found)
-        print(f"    monitores: {', '.join(monitors()) or '?'}")
+        check(ui("cli.layer"), "zwlr_layer_shell_v1" in found, ui("cli.layer_hint"))
+        check(ui("cli.pause"), "zcosmic_toplevel_info_v1" in found, ui("cli.pause_hint"))
+        check(ui("cli.idle"), "ext_idle_notifier_v1" in found)
+        print(f"    {ui('cli.monitors')}: {', '.join(monitors()) or '?'}")
     in_input = os.access("/dev/input/event0", os.R_OK)
-    print(f"  {'✔' if in_input else '·'} contar teclas (opcional, grupo `input`): {'sí' if in_input else 'no'}")
-    print("Todo listo." if ok else "Falta algo (ver arriba).")
+    print(f"  {'✔' if in_input else '·'} {ui('cli.keys')}: {ui('cli.yes') if in_input else ui('cli.no')}")
+    print(ui("cli.ok") if ok else ui("cli.missing"))
     return 0 if ok else 1
 
 
@@ -213,8 +212,7 @@ def _deps_hint() -> str:
 
 
 def cmd_story(args):
-    from . import config, i18n, story
-    i18n.set_lang(config.load().get("language", "es"))
+    from . import story
     out = story.export(args.date)
     if not out:
         print(i18n.tr("story.empty", date=args.date or time.strftime("%Y-%m-%d")))
@@ -253,6 +251,10 @@ def main():
     snap.add_argument("png")
     snap.add_argument("extra", nargs=argparse.REMAINDER)
     args = ap.parse_args()
+    try:
+        i18n.set_lang(config.load().get("language", "auto"))
+    except (OSError, ValueError):
+        i18n.set_lang("auto")
 
     if args.cmd in (None, "run"):
         if args.cmd is None:

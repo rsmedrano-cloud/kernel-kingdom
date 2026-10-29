@@ -24,7 +24,7 @@ falta algo, el instalador te dice el comando exacto.
 kernel-kingdom            # daemon + wallpaper en todos los monitores
 kernel-kingdom window     # ventana sin bordes, con zoom (funciona en cualquier lado)
 kernel-kingdom chronicle  # la crónica completa
-kernel-kingdom config     # crea ~/.config/kernel-kingdom/config.toml (language = "es" | "en")
+kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (language: auto, es, en)
 kernel-kingdom uninstall
 ```
 

@@ -24,7 +24,7 @@ distro; the installer tells you the exact package command if any is missing.
 kernel-kingdom            # daemon + wallpaper on every monitor
 kernel-kingdom window     # borderless window with zoom (works anywhere, even GNOME/X11)
 kernel-kingdom chronicle  # read the whole chronicle
-kernel-kingdom config     # create ~/.config/kernel-kingdom/config.toml (language = "en" | "es")
+kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language: auto, en, es)
 kernel-kingdom uninstall
 ```
 

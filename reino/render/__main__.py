@@ -102,7 +102,7 @@ def main():
     ap.add_argument("--hour", type=float, help="forzar hora del día (0-24)")
     args = ap.parse_args()
     cfg = config.load(args.config)
-    i18n.set_lang(cfg.get("language", "es"))
+    i18n.set_lang(cfg.get("language", "auto"))
 
     if args.snapshot:
         return snapshot(args, cfg)

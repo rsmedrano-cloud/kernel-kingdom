@@ -2,7 +2,7 @@
 # No edites este archivo: copiá las secciones que quieras cambiar a
 # ~/.config/kernel-kingdom/config.toml (kernel-kingdom config lo crea) y se mezclan encima.
 
-language = "es"       # "es" o "en": idioma de la crónica y la interfaz
+language = "auto"     # "auto" (según el idioma del sistema), "es" o "en"
 
 [daemon]
 interval = 2.0        # segundos entre muestreos del sistema

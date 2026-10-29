@@ -64,7 +64,7 @@ def main():
     args = ap.parse_args()
 
     cfg = config.load(args.config)
-    i18n.set_lang(cfg.get("language", "es"))
+    i18n.set_lang(cfg.get("language", "auto"))
     interval = args.interval or cfg["daemon"]["interval"]
     save_path, state_path = paths.save_file(), paths.state_file()
 

@@ -18,8 +18,20 @@ def _locale(code: str):
     return _LOCALES[code]
 
 
+def detect() -> str:
+    """Idioma del sistema: castellano si el locale es es_*, si no inglés."""
+    import os
+    for var in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"):
+        value = os.environ.get(var, "")
+        if value:
+            return "es" if value.lower().startswith("es") else "en"
+    return "en"
+
+
 def set_lang(code: str):
     global LANG
+    if code == "auto":
+        code = detect()
     try:
         _locale(code)
         LANG = code
