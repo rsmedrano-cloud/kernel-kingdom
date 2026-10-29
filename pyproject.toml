@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kernel-kingdom"
+version = "0.1.0"
+description = "Pixel-art isometric live wallpaper / idle game whose kingdoms grow from your system's processes, RAM, CPU and containers."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["psutil>=5.9"]
+# PyGObject, pycairo, GTK 4 y gtk4-layer-shell vienen del sistema (ver README / install.sh)
+keywords = ["wallpaper", "wayland", "pixel-art", "idle-game", "system-monitor"]
+classifiers = [
+    "Environment :: X11 Applications :: GTK",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Desktop Environment",
+    "Topic :: Games/Entertainment :: Simulation",
+]
+
+[project.urls]
+Homepage = "https://rsmedrano-cloud.github.io/kernel-kingdom/"
+Source = "https://github.com/rsmedrano-cloud/kernel-kingdom"
+
+[project.scripts]
+kernel-kingdom = "reino.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["reino*"]
+
+[tool.setuptools.package-data]
+reino = ["default_config.toml"]

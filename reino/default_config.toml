@@ -1,0 +1,151 @@
+# Configuración por defecto de kernel-kingdom.
+# No edites este archivo: copiá las secciones que quieras cambiar a
+# ~/.config/kernel-kingdom/config.toml (kernel-kingdom config lo crea) y se mezclan encima.
+
+language = "es"       # "es" o "en": idioma de la crónica y la interfaz
+
+[daemon]
+interval = 2.0        # segundos entre muestreos del sistema
+save_every = 30.0     # segundos entre guardados del mundo persistente
+nice = 10             # prioridad baja: el daemon nunca le compite a tus procesos
+
+[world]
+size = 72             # grilla size x size
+aspect = 1.78         # proporción de la isla en pantalla (16:9). 2.33 para ultrawide
+seed = 0              # 0 = una isla al azar (se guarda); cualquier otro número = isla fija
+
+# ---------------------------------------------------------------------------
+# Facciones expansivas: navegadores (y apps Electron). Clave = nombre de la
+# facción; valor = nombres de proceso raíz. Todos los procesos descendientes
+# (renderers, GPU, utility...) se suman a la facción.
+[browsers]
+chrome   = ["chrome", "chromium", "chromium-browse", "google-chrome", "chrome_crashpad"]
+firefox  = ["firefox", "firefox-bin"]
+zen      = ["zen", "zen-bin"]
+brave    = ["brave", "brave-browser"]
+electron = ["vesktop", "vesktop.bin", "Discord", "discord", "slack", "obsidian", "electron"]
+
+[browsers_rules]
+mb_per_tile = 40          # cada 40 MB de RSS = 1 casilla de territorio objetivo
+max_land_fraction = 0.22  # una facción nunca ocupa más del 22% de la tierra
+expand_per_tick = 4       # casillas máximas ganadas por tick
+shrink_per_tick = 3       # casillas máximas perdidas por tick (abandono -> ruinas)
+density_k = 0.35          # cuánto suben los edificios por proceso hijo
+friction_ratio = 1.25     # una facción le roba casillas a otra si tiene 25% más RAM
+ruin_ticks = 45           # cuánto duran las ruinas de barrios abandonados
+
+[colors]
+chrome   = [217, 74, 61]
+firefox  = [240, 138, 36]
+zen      = [142, 108, 216]
+brave    = [242, 95, 28]
+electron = [91, 141, 239]
+
+# Otras apps pesadas que no son navegadores -> aldeas con un edificio emblema
+[apps]
+min_rss_mb = 150          # una app tiene que usar al menos esto para fundar aldea
+max = 5                   # cuántas aldeas como máximo (las de más RAM)
+mb_per_tile = 30
+max_tiles = 14
+ignore = ["python3", "python", "Xwayland", "systemd", "pipewire", "wireplumber", "mpvpaper",
+          "gnome-keyring-daemon", "dbus-broker", "flatpak-session-helper", "bwrap", "conmon",
+          "claude-code-guide"]
+ignore_prefix = ["cosmic-applet", "cosmic-ext-applet", "cosmic-panel", "cosmic-comp", "cosmic-bg",
+                 "cosmic-osd", "cosmic-session", "cosmic-settings-daemon", "cosmic-notifications",
+                 "cosmic-launcher", "cosmic-app-library", "cosmic-workspaces", "cosmic-idle",
+                 "cosmic-files-applet", "cosmic-greeter", "xdg-", "at-spi", "gvfs", "evolution-",
+                 "gnome-", "kworker", "ibus"]
+
+# Edificio emblema de cada aldea: oraculo, arena, teatro, taberna, atalaya,
+# molino, granero, mercado, herreria. Las que no estén acá eligen por sorteo.
+[apps.landmarks]
+claude = "oraculo"
+cosmic-term = "herreria"
+alacritty = "herreria"
+kitty = "herreria"
+steam = "arena"
+steamwebhelper = "arena"
+obs = "teatro"
+spotify = "taberna"
+opensnitch-ui = "atalaya"
+
+# ---------------------------------------------------------------------------
+# Fortalezas: servicios estables. Los contenedores se detectan solos
+# (conmon de Podman / containerd-shim de Docker).
+[fortresses]
+databases = ["postgres", "mysqld", "mariadbd", "redis-server", "valkey-server", "mongod"]
+daemons   = ["sshd", "ollama", "syncthing", "sunshine", "tailscaled", "dockerd", "pipewire"]
+min_uptime = 60           # segundos corriendo antes de construir el castillo
+walls_at = [600, 3600]    # uptime (s) para muralla nivel 1 y nivel 2
+shield_radius = 4         # radio base (casillas) que protege un castillo de rayos
+shield_cost = 5.0         # defensa consumida por rayo bloqueado
+
+# Entornos de desarrollo -> Torre de la Academia (pisos = editores abiertos)
+[dev]
+editors   = ["code", "codium", "nvim", "vim", "emacs", "zed", "zeditor", "hx", "helix", "idea", "pycharm"]
+compilers = ["cc1", "cc1plus", "rustc", "clang", "clang++", "gcc", "g++", "ld", "ld.lld", "mold",
+             "javac", "go", "tsc", "esbuild", "cargo", "ninja", "make", "webpack", "vite"]
+
+# ---------------------------------------------------------------------------
+# Picos de CPU -> clima
+[weather]
+storm_cpu = 55        # % CPU (media móvil) para tormenta eléctrica
+eruption_cpu = 85     # % CPU sostenido...
+eruption_hold = 20    # ...durante estos segundos -> erupción del volcán
+fog_ram = 85          # % RAM -> niebla (las facciones no pueden expandirse)
+lightning_rate = 1.5  # rayos esperados por tick a intensidad máxima
+burn_ticks = 25       # cuánto tarda en reconstruirse una casilla quemada
+heat_temp = 82        # °C de CPU -> ola de calor (los bosques pueden incendiarse)
+plague_swap = 25      # % de swap -> peste (la ciudad más grande no puede crecer en altura)
+
+# Otras variables del sistema -> sucesos
+[events]
+fleet_mbps = 4.0      # descarga sostenida (MB/s) -> llega una flota mercante
+caravan_mbps = 1.5    # subida sostenida (MB/s) -> parten caravanas
+mine_mbps = 40.0      # disco (MB/s) -> las minas trabajan a destajo
+births_boom = 80      # procesos nuevos en un tick -> "explosión demográfica"
+typing_burst_kpm = 220
+afk_minutes = 10      # ausencia que el reino nota
+flavor_every = 600    # ticks promedio entre sucesos de color (600 ticks = 20 min)
+
+# Nombres del lore. Lo que no esté acá se genera solo a partir del nombre del proceso.
+[lore.realms]
+chrome = "Cromaria"
+firefox = "Zorravia"
+zen = "Zenhar"
+brave = "Leonis"
+electron = "Electra"
+claude = "Claudel"
+cosmic-term = "Terminalia"
+
+[lore.places]
+sshd = "Llavegrís"
+tailscaled = "Velotejido"
+pipewire = "Cañosonoro"
+ollama = "Llamaroja"
+postgres = "Elefantia"
+redis-server = "Rojapresta"
+Fedora = "Sombrero Azul"
+
+# Poderes del Soberano: lo que cuesta cada uno (oro, piedra, maná, defensa).
+# Se usan desde la barra de poderes del wallpaper (o teclas 1-7 en modo ventana).
+[powers]
+rayo = { mana = 5 }
+lluvia = { mana = 15 }
+bendicion = { mana = 20 }
+heroe = { mana = 40 }
+bosque = { gold = 20 }
+faro = { gold = 60, stone = 30 }
+fiesta = { gold = 40 }
+
+# ---------------------------------------------------------------------------
+[render]
+max_fps = 30          # tope duro
+idle_fps = 6          # sin clima activo: aldeanos, barcos, molinos. 0 = estático
+pixel_scale = "auto"  # entero (3 = cada pixel lógico ocupa 3x3) o "auto": ajusta la isla a la pantalla
+coverage = 0.90       # fracción de pantalla tapada por ventanas para pausar (tiling con gaps ≈ 0.95)
+interactive = false   # el fondo de pantalla es para mirar (los clics pasan al escritorio).
+                      # true: también muestra fichas al hacer clic. La ventana siempre es interactiva.
+show_chronicle = true
+show_powers = true    # barra de poderes del Soberano
+hemisphere = "auto"   # estaciones: "norte", "sur" o "auto" (según la zona horaria)
