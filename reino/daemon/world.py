@@ -664,13 +664,13 @@ class World:
                 for i in path[1:-1]:
                     self.road[i] = 1
 
-    def _path(self, start: int, goal: int) -> list[int] | None:
+    def _path(self, start: int, goal: int, forest: float = 0.8) -> list[int] | None:
         """Dijkstra con costo por terreno + ruido fijo: caminos que serpentean
         y que prefieren reusar tramos ya construidos (se forman troncales)."""
         if not hasattr(self, "_road_noise"):
             rng = rng_for(self.seed, "roads")
             self._road_noise = [rng.random() for _ in range(self.n * self.n)]
-        extra = {HILL: 2.5, FOREST: 0.8, SAND: 0.5}
+        extra = {HILL: 2.5, FOREST: forest, SAND: 0.5}
         dist = {start: 0.0}
         prev = {start: None}
         heap = [(0.0, start)]
@@ -1006,7 +1006,8 @@ class World:
         """Manda `n` personas de la capital de `f` a la casilla `target` (por tierra).
         Tardan ~1 tick cada 2 casillas en llegar y `work` ticks trabajando allá."""
         src = self.idx(*f["capital"]) if f else target
-        path = (self._path(src, target) or [src, target]) if src != target else [target]
+        # las expediciones prefieren caminos y campo abierto: se ven, y no cruzan el bosque si no hace falta
+        path = (self._path(src, target, forest=5.0) or [src, target]) if src != target else [target]
         self.counters["expeditions"] = self.counters.get("expeditions", 0) + 1
         e = {"id": self.counters["expeditions"], "kind": kind, "fid": f["id"] if f else 0, "path": path,
              "start": self.tick, "eta": max(2, len(path) // 2), "work": work, "n": n,
@@ -1217,7 +1218,7 @@ class World:
         if not alive:
             return
         kinds = [e["kind"] for e in self.expeditions]
-        if kinds.count("explore") < 2 and rng.random() < 1 / 900:        # unas 50 expediciones por día
+        if kinds.count("explore") < 3 and rng.random() < 1 / 400:        # una cada ~13 min
             f = rng.choice(alive)
             wild = [i for i in rng.sample(range(len(self.terrain)), 400)
                     if self.terrain[i] in LAND and self._wild(i) and self._dist(i, f["capital"]) > 10]

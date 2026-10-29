@@ -101,6 +101,9 @@ def main():
         print("kernel-kingdom daemon: sin acceso a /dev/input -> no se cuentan teclas, solo presencia", file=sys.stderr)
     next_save = time.monotonic() + cfg["daemon"]["save_every"]
     day = time.strftime("%Y-%m-%d")
+    added = story.backfill(world.chronicle.entries)          # lo de hoy que pasó antes de este arranque
+    if added:
+        print(f"kernel-kingdom daemon: {added} entradas de hoy recuperadas para la historia del día", file=sys.stderr)
     while not stop.is_set():
         t0 = time.monotonic()
         snap = probe.sample()

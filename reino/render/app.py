@@ -206,9 +206,12 @@ class Wallpaper:
             return
         now = time.monotonic()
         realm = self.painter.hud_realm_at(x / self._base, y / self._base)
+        entry = self.painter.chron_entry_at(x / self._base, y / self._base)
         power = self.painter.power_at(x / self._base, y / self._base)
         if realm:                                   # clic en un reino de la lista: ir a verlo
             self._focus_realm(realm, now)
+        elif entry:                                 # clic en la crónica: ir a donde pasó
+            self._focus_tile(entry["x"], entry["y"], now)
         elif power:                                 # clic en la barra de poderes
             self.painter.select_power(None if power == self.painter.selected_power else power)
         elif self.painter.selected_power:           # con un poder elegido, el clic lo lanza
@@ -272,6 +275,15 @@ class Wallpaper:
         else:
             self._zoom_at(-1 if dy > 0 else 1, x, y)
         return True
+
+    def _focus_tile(self, x: int, y: int, now: float):
+        if self.zoom < 2 and not self.layered:
+            self.zoom = min(2, len(zoom_scales(self._base)) - 1)
+        self.painter.focus_tile(x, y)
+        self._render()
+        w, h = self.view.get_width(), self.view.get_height()
+        self.painter.inspect(w / 2 / self._scale, h / 2 / self._scale, now, ui_pos=(w / 2 / self._base, h / 2 / self._base))
+        self._render()
 
     def _focus_realm(self, fid: int, now: float):
         """Viaja a la capital de un reino (con algo de zoom) y abre su ficha."""

@@ -47,6 +47,23 @@ def archive(entries: list[dict]):
                 out.write(json.dumps(e, ensure_ascii=False) + "\n")
 
 
+def backfill(entries: list[dict]):
+    """Completa el archivo de hoy con entradas de la crónica guardada que son
+    anteriores a lo ya archivado (p.ej. de antes de actualizar o reiniciar)."""
+    day = time.strftime("%Y-%m-%d")
+    have = load(day)
+    first = min((e["t"] for e in have), default=float("inf"))
+    seen = {(e["t"], e["text"]) for e in have}
+    older = [e for e in entries if time.strftime("%Y-%m-%d", time.localtime(e["t"])) == day
+             and e["t"] < first and (e["t"], e["text"]) not in seen]
+    if not older:
+        return 0
+    f = archive_file(day)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in older + have), encoding="utf-8")
+    return len(older)
+
+
 def load(day: str) -> list[dict]:
     f = archive_file(day)
     if not f.exists():

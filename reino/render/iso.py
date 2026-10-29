@@ -839,11 +839,26 @@ class Sprites:
 
 # Qué sprite usa cada tipo de edificio (además de la casa)
 _LANDMARK_BLD = {B.MARKET: "mercado", B.BARN: "granero", B.WORKSHOP: "herreria", B.TAVERN: "taberna"}
+# Marcas sobre el mapa para los sucesos grandes: plantilla -> (color, ícono)
+_RED, _GOLD, _GREEN, _BLUE = rgb("#ff5a4a"), rgb("#f5d76e"), rgb("#7fd06a"), rgb("#7fc8ff")
+_MARKERS = {
+    "war.declare": (_RED, "swords"), "war.start": (_RED, "swords"), "battle": (_RED, "swords"),
+    "capital.sacked": (_RED, "swords"), "capital.moved": (_GOLD, "flag"), "exp.siege.start": (_RED, "swords"),
+    "exp.siegecity.start": (_RED, "swords"), "exp.siege.held": (_BLUE, "star"), "exp.siege.breach": (_RED, "swords"),
+    "exp.army.march": (_RED, "swords"), "exp.explore.start": (_GREEN, "flag"), "exp.explore.find": (_GREEN, "star"),
+    "exp.build.start": (_GOLD, "flag"), "exp.build.done": (_GOLD, "star"), "exp.plant.start": (_GREEN, "flag"),
+    "dyn.reborn": (_GOLD, "flag"), "fall": (_RED, "flag"), "found.realm": (_GOLD, "flag"), "monument": (_GOLD, "star"),
+    "power.rayo": (_BLUE, "star"),
+}
+# Avisos en la ventana cuando pasa algo de esto
+_TOASTS = {"war.declare", "war.start", "capital.sacked", "exp.siege.breach", "fall", "dyn.reborn", "exp.build.done",
+           "peace"}
+
 # Por dónde caminan los aldeanos
 _WALKABLE = {B.STREET, B.PLAZA, B.WELL, B.MONUMENT, B.FARM, B.PASTURE, B.GARDEN, B.DOCK}
 # Sprites planos: no tapan a nadie (no van al buffer de profundidad)
 _FLAT_SPRITES = {"paving", "road", "field", "pasture", "dock", "garden", "graveyard", "rubble",
-                 "crater", "decor", "tree"}   # los árboles no tapan a la gente: el movimiento se tiene que ver
+                 "crater", "decor"}
 
 
 # -- texto -------------------------------------------------------------------
@@ -959,6 +974,7 @@ class Painter:
         self.chron_scroll = 0
         self.chron_mode = 1               # 0 oculta, 1 normal, 2 expandida
         self._hud_lines: dict[int, int] = {}
+        self._chron_lines: dict[int, dict] = {}
         self._rects: dict[str, tuple] = {}
         self.powers_panel = None
         self.power_rects: list[str] = []
@@ -1043,6 +1059,10 @@ class Painter:
         if sig != self._state_sig:
             self._state_sig = sig
             self._sig = None
+        if prev_tick is not None and tick != prev_tick and self.window_mode:
+            fresh = [e for e in state.get("chronicle", []) if e.get("tick", 0) > prev_tick and e.get("k") in _TOASTS]
+            if fresh:
+                self.toast(fresh[-1]["text"], now, secs=8)
         if prev_tick is not None and tick != prev_tick:
             rng = random.Random(tick)
             for ev in state.get("events", []):
@@ -1642,6 +1662,7 @@ class Painter:
             max_rows = max(9, free // 11 - 2) if expanded else 9
             self.chron_scroll = max(0, min(self.chron_scroll, len(entries) - 1))
             rows: list[tuple[str, tuple, None]] = []
+            self._chron_lines = {}
             for k, e in enumerate(entries[::-1][self.chron_scroll:]):
                 stamp = time.strftime("%d/%m %H:%M" if expanded else "%H:%M", time.localtime(e["t"]))
                 col = TEXT if k == 0 and not self.chron_scroll else DIM
@@ -1649,7 +1670,9 @@ class Painter:
                 if len(rows) + len(wrapped) > max_rows:
                     break
                 for j, line in enumerate(wrapped):
-                    rows.append(((stamp if j == 0 else " " * len(stamp)) + "  " + line, col, None))
+                    rows.append(((stamp if j == 0 else " " * len(stamp)) + "  " + line,
+                                 GOLD if "x" in e and self.window_mode and j == 0 and k == 0 else col, None))
+                    self._chron_lines[len(rows) - 1] = e
             title = ui("chron.title", kingdom=kingdom)
             if self.chron_scroll:
                 title += ui("chron.back", n=self.chron_scroll)
@@ -1675,6 +1698,14 @@ class Painter:
             if x <= ux < x + w and y <= uy < y + h:
                 return name
         return None
+
+    def chron_entry_at(self, ux: float, uy: float) -> dict | None:
+        """Entrada de la crónica del renglón bajo el punto (si tiene lugar en el mapa)."""
+        if self.ui_region(ux, uy) != "chron":
+            return None
+        _, y0, _, _ = self._rects["chron"]
+        e = self._chron_lines.get(int((uy - y0 - 16) // 11))
+        return e if e and "x" in e else None
 
     def hud_realm_at(self, ux: float, uy: float) -> int | None:
         """Id del reino de la fila del HUD bajo el punto."""
@@ -1716,7 +1747,8 @@ class Painter:
         self._ui_dirty = True
 
     def toast(self, text: str, now: float, ok: bool = True, secs: float = 4.0):
-        self._toast = (_panel([(text, TEXT if ok else rgb("#ff9a8a"), None)]), now + secs)
+        col = TEXT if ok else rgb("#ff9a8a")
+        self._toast = (_panel([(line, col, None) for line in _wrap(_MEASURE, text, 420)]), now + secs)
         self._ui_drawn = None
 
     def _height_px(self, i: int) -> int:
@@ -2012,6 +2044,7 @@ class Painter:
 
         self._villagers(ctx, now, night, act)
         self._expedition_units(ctx, now)
+        self._event_markers(ctx, now)
 
         # Fiesta (confeti sobre la capital) y bendición (chispas doradas) por poderes del Soberano
         tick = st["tick"]
@@ -2169,6 +2202,35 @@ class Painter:
         pixels(ctx, torches, rgb("#ffcf6a"))
         pixels(ctx, sparks, (1, 1, 1))
 
+    def _event_markers(self, ctx, now: float):
+        """Anillos que laten donde pasó algo grande en los últimos 10 minutos:
+        así una guerra o un saqueo no pasan desapercibidos aunque no mires la crónica."""
+        wall = time.time()
+        n = self.state["w"]
+        for e in self.state.get("chronicle", [])[-60:]:
+            style = _MARKERS.get(e.get("k", ""))
+            age = wall - e["t"]
+            if not style or "x" not in e or age > 600 or not (0 <= e["x"] < n and 0 <= e["y"] < n):
+                continue
+            col, icon = style
+            cx, cy = self.tile_xy(e["x"], e["y"], self.elev_at(e["x"], e["y"]))
+            cy += TH // 2
+            fade = 1 - age / 600
+            r = 6 + (now * 6 + e["t"]) % 10                 # anillo que se expande
+            ctx.save()
+            ctx.translate(cx, cy)
+            ctx.scale(1, 0.5)
+            ctx.arc(0, 0, r, 0, 2 * math.pi)
+            ctx.restore()
+            ctx.set_line_width(1)
+            ctx.set_source_rgba(*col, 0.85 * fade * (1 - (r - 6) / 10))
+            ctx.stroke()
+            bob = int(now * 2) % 2
+            pts = {"swords": [(-2, -2), (-1, -1), (0, 0), (1, 1), (2, 2), (2, -2), (1, -1), (-1, 1), (-2, 2)],
+                   "star": [(0, -2), (0, -1), (-2, 0), (-1, 0), (0, 0), (1, 0), (2, 0), (0, 1), (0, 2)],
+                   "flag": [(0, -2), (0, -1), (0, 0), (0, 1), (0, 2), (1, -2), (2, -2), (1, -1), (2, -1)]}[icon]
+            pixels(ctx, [(cx + dx, cy - 16 + dy + bob) for dx, dy in pts], col, max(0.35, fade))
+
     def _expedition_units(self, ctx, now: float):
         """Grupos en marcha: obreros, druidas, exploradores, columnas y asedios.
         Caminan en fila por el camino que calculó el daemon y trabajan al llegar."""
@@ -2209,6 +2271,9 @@ class Painter:
                     x, y = ax + (bx - ax) * fr, ay + (by - ay) * fr
                     z = zs[min(j + 1, L)] if fr >= 0.5 else zs[j]
                     y += int(now * 4 + k) % 2 * 0.5           # paso
+                if k == 0 and e["kind"] != "plant":
+                    mark("pole", (x, y - 9))
+                    mark("flag:" + ",".join(f"{c:.3f}" for c in col), (x + 1, y - 9))
                 if not self._visible(x, y - 2, z):
                     continue
                 heads.append((x, y - 2))
@@ -2237,6 +2302,10 @@ class Painter:
         pixels(ctx, extras.get("hat", []), rgb("#6b4a2b"), size=(3, 1))
         pixels(ctx, extras.get("spark", []) + extras.get("arrow", []), (1, 0.95, 0.7))
         pixels(ctx, extras.get("leaf", []), rgb("#7fd06a"))
+        pixels(ctx, extras.get("pole", []), rgb("#4a3b2a"), size=(1, 8))
+        for kind, pts in extras.items():
+            if kind.startswith("flag:"):
+                pixels(ctx, pts, tuple(float(v) for v in kind[5:].split(",")), size=(3, 2))
 
     # -- clima (coordenadas de pantalla) -------------------------------------------
 
