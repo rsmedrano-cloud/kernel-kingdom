@@ -800,6 +800,27 @@ class Sprites:
             pixels(ctx, [(6, 4)], rgb("#ffb03a"))
         return s, -7, -9
 
+    def _make_wreck(self, variant: int):
+        """Edificio incendiado: cimiento chamuscado, paredes a medio caer, vigas y escombros."""
+        s, ctx, ox = _obj()
+        b = OBJ_BASE
+        rng = random.Random(variant)
+        char, soot = rgb("#5a4a40"), rgb("#2a201c")
+        prism(ctx, ox + 2, b - 7, 12, 2, rgb("#3b2d27"), shade(char, 0.9), soot)
+        walls = []
+        for k in range(6):                                  # muñones de pared (cara izq. y der.)
+            hl, hr = rng.randint(1, 6 + variant), rng.randint(1, 5 + variant)
+            walls += [(ox + 2 + k, b - 4 + k // 2 - hl, hl, char), (ox + 8 + k, b - 2 - k // 2 - hr, hr, soot)]
+        for x, y, hgt, col in walls:
+            ctx.rectangle(x, y, 1, hgt)
+            ctx.set_source_rgb(*col)
+            ctx.fill()
+        pixels(ctx, [(ox + 5 + k, b - 12 + k) for k in range(5)] +
+               [(ox + 11 - k, b - 11 + k) for k in range(4)], rgb("#1e1612"))          # vigas caídas
+        pixels(ctx, [(ox + rng.randrange(1, 15), b - rng.randrange(0, 5)) for _ in range(9)], RUBBLE)
+        pixels(ctx, [(ox + rng.randrange(3, 13), b - rng.randrange(2, 6)) for _ in range(4)], EMBER)
+        return self._anchor(s)
+
     def _make_rubble(self, variant: int):
         s, ctx = _surface(12, 6)
         rng = random.Random(variant)
@@ -976,6 +997,10 @@ class Painter:
         self.chron_buttons: list = []
         self._menu_rows: list = []
         self.confirm_new_until = 0.0
+        self.wallpaper_on = False
+        self.dialog: dict | None = None    # ventana de diálogo (p.ej. la pregunta de bienvenida)
+        self.dialog_panel = None
+        self._dialog_rows: list = []
         self.hud_scroll = 0
         self.chron_scroll = 0
         self.chron_mode = 1               # 0 oculta, 1 normal, 2 expandida
@@ -988,7 +1013,11 @@ class Painter:
         self._reset_anim()
 
     def _reset_anim(self):
-        self.burn_px: list[tuple[int, int]] = []
+        self.burn_px: list[tuple[int, int, bool]] = []
+        self.war_melee: list[tuple] = []
+        self.war_engines: list[tuple] = []
+        self.war_camps: list[tuple] = []
+        self._war_sig = None
         self.lava_px: list[tuple[int, int]] = []
         self.flags: list[tuple[int, int, tuple]] = []
         self.mills: list[tuple[int, int]] = []
@@ -1062,6 +1091,7 @@ class Painter:
         if sig != self._state_sig:
             self._state_sig = sig
             self._sig = None
+        self._war_sig = None                                 # replanificar el frente
         if prev_tick is not None and tick != prev_tick and self.window_mode:
             fresh = [e for e in state.get("chronicle", []) if e.get("tick", 0) > prev_tick and e.get("k") in _TOASTS]
             if fresh:
@@ -1225,7 +1255,7 @@ class Painter:
                     self.lava_px.append((sx, sy - e))
                 elif burn[i]:
                     special = "scorched"
-                    self.burn_px.append((sx, sy - e + 4))
+                    self.burn_px.append((sx, sy - e + 4, bool(owner[i])))
                 elif t == MOUNTAIN and self._depth[i] >= 4 and season != "verano":
                     special = "snow"
                 blit(("terrain", t, e, var, special, season), sx, sy)
@@ -1280,6 +1310,7 @@ class Painter:
                     place(o, "palace", i)
                     continue
                 if burn[i]:
+                    blit(("wreck", hsh % 3), cx, cy)
                     continue
                 if tick - born[i] < 4 and b not in (B.STREET, B.PLAZA, B.FARM, B.PASTURE, B.NONE):
                     blit(("scaffold",), cx, cy)
@@ -1695,6 +1726,16 @@ class Painter:
             self.menu_button = _panel([(("▲ " if self.menu_open else "▼ ") + ui("menu.button"), GOLD, None)])
             if self.menu_open:
                 self.menu_panel = self._build_menu(st)
+        self.dialog_panel = None
+        if self.dialog:
+            rows, self._dialog_rows = [], []
+            for label, action in self.dialog["options"]:
+                rows.append((f"> {label}", TEXT, None))
+                self._dialog_rows.append(action)
+            if self.dialog.get("note"):
+                rows += [("", DIM, None), (self.dialog["note"], DIM, None)]
+                self._dialog_rows += [None, None]
+            self.dialog_panel = _panel(rows, title=self.dialog["title"])
 
     def _build_menu(self, st: dict):
         """Desplegable del botón Menú: qué paneles se ven, los poderes y acciones del mundo."""
@@ -1719,6 +1760,7 @@ class Painter:
                 col = GOLD if key == self.selected_power else (TEXT if afford else (0.42, 0.43, 0.46))
                 add(f"  {k + 1} {names[key][0]:<10} {price}", col, ("power", key))
         add(ui("menu.world"), GOLD, None)
+        add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
         confirming = self.confirm_new_until > time.monotonic()
         add(f"  {ui('menu.new_confirm') if confirming else ui('menu.new')}",
@@ -1726,6 +1768,21 @@ class Painter:
         add(f"  {ui('menu.quit')}", TEXT, ("quit",))
         add(ui("menu.help"), DIM, None)
         return _panel(rows)
+
+    def show_dialog(self, title: str, options: list[tuple[str, str]], note: str = ""):
+        self.dialog = {"title": title, "options": options, "note": note}
+        self._ui_dirty = True
+
+    def close_dialog(self):
+        self.dialog = None
+        self._ui_dirty = True
+
+    def dialog_action_at(self, ux: float, uy: float):
+        if self.ui_region(ux, uy) != "dialog":
+            return None
+        _, y0, _, _ = self._rects["dialog"]
+        row = int((uy - y0 - 16) // 11)
+        return self._dialog_rows[row] if 0 <= row < len(self._dialog_rows) else None
 
     def menu_action_at(self, ux: float, uy: float):
         """Acción del renglón del menú bajo el punto, o None."""
@@ -1974,6 +2031,7 @@ class Painter:
 
     def _ui_key(self, now: float):
         return (id(self.hud), id(self.chron), id(self.menu_panel), id(self.menu_button), id(self._toast),
+                id(self.dialog_panel),
                 id(self.card["surf"]) if self.card else None,
                 round(min(1.0, self.card["until"] - now), 1) if self.card else None)
 
@@ -2030,6 +2088,15 @@ class Painter:
                 ctx.set_source_surface(self.menu_panel, mx, my)
                 ctx.paint()
                 self._rects["menu"] = (mx, my, self.menu_panel.get_width(), self.menu_panel.get_height())
+        if self.dialog_panel:                                 # diálogo al centro, con el fondo oscurecido
+            ctx.rectangle(0, 0, fw, fh)
+            ctx.set_source_rgba(0, 0, 0, 0.35)
+            ctx.fill()
+            dw, dh = self.dialog_panel.get_width(), self.dialog_panel.get_height()
+            dx, dy = (fw - dw) // 2, (fh - dh) // 2
+            ctx.set_source_surface(self.dialog_panel, dx, dy)
+            ctx.paint()
+            self._rects["dialog"] = (dx, dy, dw, dh)
         hint = self._toast[0] if self._toast else (
             _panel([(ui("powers.pick", power=words("powers")[self.selected_power][0]), GOLD, None)])
             if self.selected_power else None)
@@ -2105,8 +2172,10 @@ class Painter:
         pixels(ctx, sheep, (0.96, 0.96, 0.94), size=(2, 1))
         pixels(ctx, [(x + 2, y) for x, y in sheep], rgb("#3a3a3a"))
 
+        self._draw_fires(ctx, now)
         self._villagers(ctx, now, night, act)
         self._expedition_units(ctx, now)
+        self._war_scene(ctx, now)
         self._event_markers(ctx, now)
 
         # Fiesta (confeti sobre la capital) y bendición (chispas doradas) por poderes del Soberano
@@ -2154,12 +2223,6 @@ class Painter:
                 wing = int(now * 6 + k) % 2
                 pts += [(x - 2, y - wing), (x - 1, y), (x, y + 1 - wing), (x + 1, y), (x + 2, y - wing)]
             pixels(ctx, pts, rgb("#2a2a33"))
-
-        # Fuego en casillas quemadas
-        f8 = int(now * 8)
-        fire = [(x + (k * 5) % 7 - 3, y - 2 - (f8 + k) % 3) for k, (x, y) in enumerate(self.burn_px) if (f8 + k) % 3]
-        pixels(ctx, fire, EMBER)
-        pixels(ctx, [(x, y - 1) for x, y in fire[::2]], rgb("#ffe08a"))
 
         # Lava: pulso de brillo
         if self.lava_px:
@@ -2369,6 +2432,230 @@ class Painter:
         for kind, pts in extras.items():
             if kind.startswith("flag:"):
                 pixels(ctx, pts, tuple(float(v) for v in kind[5:].split(",")), size=(3, 2))
+
+    # -- guerra: fuego, combates en el frente y máquinas de asedio -------------------
+
+    def _draw_fires(self, ctx, now: float):
+        """Llamas que titilan, brasas que suben y una columna de humo; sobre un
+        edificio incendiado todo es más grande y el humo es negro."""
+        f8 = int(now * 8)
+        wind = 0.5 + (self.state["weather"].get("storm") or 0) * 2
+        rects = {rgb("#c42a18"): [], EMBER: [], rgb("#ffe08a"): []}     # de afuera hacia adentro
+        red, orange, yellow = rects
+        sparks, smoke_dark, smoke_light = [], [], []
+        for k, (x, y, big) in enumerate(self.burn_px):
+            tongues = 4 if big else 2
+            base = y - (3 if big else 0)
+            for j in range(tongues):
+                hgt = 2 + h32(k, j, f8) % (6 if big else 3)
+                fx = x - tongues + 2 * j + 1
+                fy = base - (j % 2)
+                rects[red].append((fx, fy - hgt, 1, hgt))
+                rects[orange].append((fx, fy - hgt + 2, 1, max(1, hgt - 2)))
+                rects[yellow].append((fx, fy - min(2, hgt - 1), 1, min(2, hgt - 1)))
+            for j in range(4 if big else 1):
+                life = (now * 0.7 + j / 4 + k * 0.17) % 1
+                sparks.append((x + math.sin(k + j * 2.1 + now * 3) * 4, base - 4 - life * 18))
+            if k % 2 and big:
+                continue                                      # una columna cada dos casillas
+            for j in range(5 if big else 2):
+                life = (now * 0.2 + j / 5 + k * 0.11) % 1
+                pt = (x + math.sin(now * 0.8 + k + j) * 2 * (1 + life * 2) + life * 12 * wind,
+                      base - 8 - life * (50 if big else 16))
+                (smoke_dark if big and life < 0.5 else smoke_light).append(pt)
+        pixels(ctx, smoke_light, (0.6, 0.58, 0.57), 0.35, size=(3, 3))
+        pixels(ctx, smoke_dark, (0.22, 0.2, 0.2), 0.45, size=(3, 3))
+        for col, rs in rects.items():
+            for r in rs:
+                ctx.rectangle(*map(int, r))
+            ctx.set_source_rgb(*col)
+            ctx.fill()
+        pixels(ctx, sparks, rgb("#ffcf6a"))
+
+    def _plan_war(self):
+        """Dónde se pelea: casillas recién conquistadas con un enemigo al lado
+        (o, si no, cualquier tramo de frontera común), dónde van las catapultas y
+        qué tiran. Sin frontera común, el atacante arma un campamento mirando al
+        enemigo. Los asedios a capitales y fuertes llevan trebuchets."""
+        st = self.state
+        n = st["w"]
+        owner, level = st["owner"], st["level"]
+        facs = {f["id"]: f for f in st["factions"]}
+        melee, engines, camps = [], [], []
+        for war in (st.get("wars") or {}).values():
+            a, b = facs.get(war["a"]), facs.get(war["b"])
+            if not (a and b and a.get("alive") and b.get("alive")):
+                continue
+            sides = {a["id"]: b["id"], b["id"]: a["id"]}
+            pairs = []
+            for fx, fy in reversed(war.get("front") or []):
+                if not (0 <= fx < n and 0 <= fy < n):
+                    continue
+                i = fy * n + fx
+                foe = sides.get(owner[i])
+                j = next((j for j in _neigh(i, n, n) if foe and owner[j] == foe), None)
+                if j is not None and (i, j) not in pairs:
+                    pairs.append((i, j))
+                if len(pairs) >= 3:
+                    break
+            if not pairs:                                    # frontera común, sin conquistas todavía
+                border = [(i, j) for i, o in enumerate(owner) if o == a["id"]
+                          for j in _neigh(i, n, n) if owner[j] == b["id"]]
+                border.sort(key=lambda p: h32(p[0], war["start"]))
+                pairs = border[:2]
+            for k, (i, j) in enumerate(pairs):
+                pi, pj = self._center(i), self._center(j)
+                melee.append((pi, pj, owner[i], owner[j], (i % n) + (i // n) + 1, k))
+            if pairs:
+                i, j = pairs[0]
+                pj = self._center(j)
+                jx, jy = j % n, j // n
+                back = [k for k, o in enumerate(owner) if o == owner[i] and not st["burn"][k]
+                        and 4 <= abs(k % n - jx) + abs(k // n - jy) <= 6]
+                if back:
+                    ex, ey = self._center(min(back, key=lambda k: abs(k % n - i % n) + abs(k // n - i // n) + level[k]))
+                else:                                        # cabeza de playa chica: detrás del frente
+                    pi = self._center(i)
+                    ex, ey = pi[0] + (pi[0] - pj[0]) * 2.5, pi[1] + (pi[1] - pj[1]) * 2.5
+                ey += 3
+                targets = [self._center(t) for t in (yy * n + xx for xx in range(jx - 2, jx + 3)
+                                                     for yy in range(jy - 2, jy + 3) if 0 <= xx < n and 0 <= yy < n)
+                           if owner[t] == foe and level[t]][:4] or [pj]
+                engines.append((ex, ey, owner[i], targets, h32(war["start"]) % 7))
+            else:                                            # campamento: mirando al enemigo
+                att, dfn = a, b
+                cx, cy = dfn["capital"]
+                own = [i for i, o in enumerate(owner) if o == att["id"]]
+                if own:
+                    i = min(own, key=lambda i: abs(i % n - cx) + abs(i // n - cy))
+                    camps.append((self._center(i), att["id"], self._center(cy * n + cx)))
+        tick_f = st["tick"]
+        for e in st.get("expeditions", []):                  # asedios en curso: trebuchets
+            if e["kind"] not in ("siegecity", "siege") or tick_f - e["start"] < e["eta"]:
+                continue
+            tx, ty = self._center(e["path"][-1])
+            for k, dx in enumerate((-24, 24)):
+                engines.append((tx + dx, ty + 12, e["fid"], [(tx, ty)], k * 3))
+        self.war_melee, self.war_engines, self.war_camps = melee, engines, camps
+
+    def _war_scene(self, ctx, now: float):
+        if getattr(self, "_war_sig", 0) is None:
+            self._war_sig = True
+            self._plan_war()
+        colors = {f["id"]: tuple(c / 255 for c in f["color"]) for f in self.state["factions"]}
+        heads, swords, clash, fallen, arrows, dust = [], [], [], [], [], []
+        bodies: dict[tuple, list] = {}
+        shields: dict[tuple, list] = {}
+
+        def soldier(x, y, z, col, facing):
+            if not self._visible(x, y - 2, z):
+                return
+            heads.append((x, y - 2))
+            bodies.setdefault(col, []).append((x, y - 1))
+            shields.setdefault(shade(col, 0.7), []).append((x - facing, y - 1))
+            swords.append((x + facing, y - 3))
+
+        for (ax, ay), (bx, by), fa, fb, z, k in self.war_melee:
+            mx, my = (ax + bx) / 2, (ay + by) / 2
+            ca, cb = colors.get(fa, (1, 1, 1)), colors.get(fb, (1, 1, 1))
+            for s in range(6):
+                side = (ax, ay, ca, 1 if bx > ax else -1) if s % 2 == 0 else (bx, by, cb, 1 if ax > bx else -1)
+                ox, oy, col, facing = side
+                lunge = max(0.0, math.sin(now * 6 + s * 1.9 + k))
+                reach = 0.5 + 0.4 * lunge
+                lat = (s // 2 - 1) * 5
+                x = ox + (mx - ox) * reach + lat
+                y = oy + (my - oy) * reach + lat * 0.4
+                cycle = (now * 0.12 + s * 0.31 + k * 0.5) % 1
+                if cycle > 0.88:                              # cae uno, se levanta otro
+                    fallen.append((x - 1, y - 1))
+                    continue
+                soldier(x, y, z, col, facing)
+                if lunge > 0.92:
+                    clash += [(x + facing * 2, y - 4), (x + facing * 2 - 1, y - 5), (x + facing * 2 + 1, y - 5)]
+            for j in range(3):                                # flechas cruzadas
+                life = (now * 0.9 + j / 3 + k * 0.4) % 1
+                (sx, sy), (tx, ty) = ((ax, ay), (bx, by)) if j % 2 == 0 else ((bx, by), (ax, ay))
+                sx, sy = sx + (sx - mx) * 1.2, sy + (sy - my) * 1.2
+                arrows.append((sx + (tx - sx) * life, sy + (ty - sy) * life - 14 * math.sin(life * math.pi) - 3))
+            for j in range(3):                                # polvareda
+                life = (now * 0.6 + j / 3 + k) % 1
+                dust.append((mx + math.sin(j * 2.3 + now) * 6 * life, my - 1 - life * 6))
+
+        for (cx, cy), fid, (tx, ty) in self.war_camps:      # campamento antes del choque
+            col = colors.get(fid, (1, 1, 1))
+            facing = 1 if tx > cx else -1
+            for s in range(5):
+                step = int(now * 2 + s) % 2
+                soldier(cx - 6 + s * 3, cy + (s % 2) * 2 + 2 + step * 0.5, 9999, col, facing)
+            self._put(ctx, ("tent", col), cx - facing * 7, cy - 1)
+            fire = int(now * 8) % 3
+            pixels(ctx, [(cx + facing * 6, cy + 3 - fire)], EMBER, size=(1, 1 + fire))
+
+        for ex, ey, fid, targets, phase in self.war_engines:
+            col = colors.get(fid, (0.6, 0.5, 0.4))
+            tgt = targets[int(now / 3.2 + phase) % len(targets)]
+            self._catapult(ctx, ex, ey, col, tgt, now, phase, dust)
+
+        pixels(ctx, dust, (0.72, 0.66, 0.55), 0.5, size=(2, 2))
+        pixels(ctx, fallen, rgb("#7a6f66"), size=(3, 1))
+        pixels(ctx, [(x + 1, y + 1) for x, y in fallen[::2]], rgb("#a02a20"))
+        pixels(ctx, heads, SKIN)
+        for col, pts in bodies.items():
+            pixels(ctx, pts, col, size=(1, 2))
+        for col, pts in shields.items():
+            pixels(ctx, pts, col, size=(1, 2))
+        pixels(ctx, swords, rgb("#dcdcdc"), size=(1, 2))
+        pixels(ctx, arrows, rgb("#2a2018"), size=(2, 1))
+        pixels(ctx, clash, (1, 1, 0.8))
+
+    def _catapult(self, ctx, x, y, col, target, now, phase, dust):
+        """Trebuchet: carga (el brazo baja despacio), dispara (latigazo) y la
+        piedra vuela en arco hasta el blanco, donde levanta polvo y astillas."""
+        period = 3.2
+        t = ((now + phase * 0.45) / period) % 1
+        tx, ty = target
+        facing = 1 if tx >= x else -1
+        legs = [(x - 4 + k * 0.5, y - k) for k in range(9)] + [(x + 4 - k * 0.5, y - k) for k in range(9)]
+        pixels(ctx, [(x - 7, y - 1)], DARK_WOOD, size=(15, 2))                # bastidor
+        pixels(ctx, legs, WOOD, size=(2, 1))
+        pixels(ctx, [(x - 6, y), (x + 4, y)], rgb("#2a2018"), size=(3, 3))   # ruedas
+        pixels(ctx, [(x - 5, y + 1), (x + 5, y + 1)], WOOD)
+        if t < 0.08:                                          # latigazo
+            ang = -2.4 + (t / 0.08) * 3.0
+        elif t < 0.35:
+            ang = 0.6
+        else:                                                 # cargando
+            ang = 0.6 - (t - 0.35) / 0.65 * 3.0
+        px, py = x, y - 9
+        dx, dy = math.cos(ang) * facing, -math.sin(ang)
+        arm = [(px + dx * k, py + dy * k) for k in range(-4, 13)]
+        pixels(ctx, arm, DARK_WOOD, size=(2, 2))
+        pixels(ctx, [(px - dx * 5 - 2, py - dy * 5 - 2)], rgb("#4a4a4a"), size=(4, 4))   # contrapeso
+        pixels(ctx, [(x - facing * 8, y - 12)], DARK_WOOD, size=(1, 11))                  # estandarte
+        pixels(ctx, [(x - facing * 8 + (1 if facing < 0 else -3), y - 12)], col, size=(3, 2))
+        sx, sy = px + dx * 12, py + dy * 12
+        if t > 0.5:                                           # piedra cargada en la honda
+            pixels(ctx, [(sx - 1, sy - 1)], rgb("#6a6560"), size=(2, 2))
+        fly = (t - 0.06) / 0.45
+        if 0 <= fly <= 1:
+            dist = abs(tx - x) + abs(ty - y)
+            h = 18 + dist * 0.35
+            bx = x + (tx - x) * fly
+            by = (y - 14) + (ty - 6 - (y - 14)) * fly - h * math.sin(fly * math.pi)
+            pixels(ctx, [(bx - facing * (2 + k), by + k * 0.3) for k in range(3)], (0.85, 0.82, 0.78), 0.5)
+            pixels(ctx, [(bx - 1, by - 1)], rgb("#3e3a36"), size=(3, 3))
+        hit = (t - 0.51) / 0.3
+        if 0 <= hit <= 1:                                     # impacto
+            r = 2 + hit * 9
+            for k in range(10):
+                a = k * 0.63
+                dust.append((tx + math.cos(a) * r, ty - 4 + math.sin(a) * r * 0.5 - hit * 3))
+            if hit < 0.25:
+                pixels(ctx, [(tx - 2, ty - 7)], (1, 0.85, 0.4), 1 - hit * 3, size=(5, 4))
+            dust += [(tx + math.cos(k * 1.9) * r * 1.2, ty - 6 - math.sin(hit * math.pi) * (4 + k))
+                     for k in range(4)]                       # astillas
+
 
     # -- clima (coordenadas de pantalla) -------------------------------------------
 

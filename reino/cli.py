@@ -104,8 +104,11 @@ def _alive(pid: int) -> bool:
 def _detach(name: str, module: str, *args: str) -> int:
     """Lanza un proceso separado de la terminal (sin salida en pantalla: va a un log)."""
     log = open(_logs() / f"{name}.log", "a")
+    env = dict(os.environ)
+    if IS_CHECKOUT:
+        env["PYTHONPATH"] = f"{DEV_ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
     proc = subprocess.Popen([sys.executable, "-m", module, *args], stdin=subprocess.DEVNULL, stdout=log,
-                            stderr=log, start_new_session=True, cwd=DEV_ROOT if IS_CHECKOUT else None)
+                            stderr=log, start_new_session=True, cwd=DEV_ROOT if IS_CHECKOUT else None, env=env)
     _pidfile(name).write_text(str(proc.pid))
     return proc.pid
 
@@ -207,11 +210,13 @@ def install_launcher():
     icon.make(DATA / "icons" / "hicolor" / "256x256" / "apps" / "kernel-kingdom.png")
     apps = DATA / "applications"
     apps.mkdir(parents=True, exist_ok=True)
-    path_line = f"Path={DEV_ROOT}\n" if IS_CHECKOUT else ""
+    # Sin depender de la carpeta de trabajo (el launcher de COSMIC ignora Path=): en un clon del repo
+    # se usa su run.sh, que se ubica solo; instalado con pip, el módulo está en el entorno.
+    exec_line = f"{DEV_ROOT / 'run.sh'} window" if IS_CHECKOUT else f"{sys.executable} -m reino window"
     (apps / f"{APP_ID}.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=Kernel Kingdom\n"
         "Comment=Your computer as a pixel-art kingdom / Tu computadora como un reino\n"
-        f"Exec={sys.executable} -m reino window\n{path_line}Icon=kernel-kingdom\nTerminal=false\n"
+        f"Exec={exec_line}\nIcon=kernel-kingdom\nTerminal=false\n"
         f"Categories=Game;Simulation;\nStartupWMClass={APP_ID}\nKeywords=wallpaper;kingdom;reino;\n")
     if shutil.which("update-desktop-database"):
         subprocess.run(["update-desktop-database", str(apps)], check=False, capture_output=True)
@@ -222,12 +227,7 @@ def cmd_install(args):
     if not shutil.which("systemctl"):
         print(ui("cli.no_systemctl"))
         return
-    UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    workdir = f"WorkingDirectory={DEV_ROOT}\n" if IS_CHECKOUT else ""
-    (UNIT_DIR / "kernel-kingdom-daemon.service").write_text(
-        DAEMON_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
-    (UNIT_DIR / "kernel-kingdom-render@.service").write_text(
-        RENDER_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
+    _write_units()
     cmd_stop(args)                                        # lo que hubiera suelto, pasa a manos de systemd
     _systemctl("daemon-reload")
     _systemctl("enable", "--now", "kernel-kingdom-daemon.service")
@@ -237,6 +237,68 @@ def cmd_install(args):
     print(ui("cli.installed", monitors=", ".join(targets)) if targets else ui("cli.installed_world"))
     print(ui("cli.launcher"))
     print(ui("cli.logs"))
+
+
+def _write_units():
+    UNIT_DIR.mkdir(parents=True, exist_ok=True)
+    workdir = f"WorkingDirectory={DEV_ROOT}\nEnvironment=PYTHONPATH={DEV_ROOT}\n" if IS_CHECKOUT else ""
+    (UNIT_DIR / "kernel-kingdom-daemon.service").write_text(
+        DAEMON_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
+    (UNIT_DIR / "kernel-kingdom-render@.service").write_text(
+        RENDER_UNIT.format(python=sys.executable).replace("[Service]\n", "[Service]\n" + workdir))
+
+
+# -- fondo de pantalla: prender / apagar (desde la terminal o desde el menú de la app) ----
+
+def wallpaper_status() -> bool:
+    if shutil.which("systemctl"):
+        out = subprocess.run(["systemctl", "--user", "list-units", "--plain", "--no-legend", "--state=active",
+                              "kernel-kingdom-render@*"], capture_output=True, text=True).stdout
+        if out.strip():
+            return True
+    return any(_running(p.stem) for p in (paths.state_file().parent / "pids").glob("render-*.pid"))
+
+
+def wallpaper_on() -> list[str]:
+    """Fondo en todos los monitores; con systemd, además arranca solo con la sesión."""
+    ensure_daemon()
+    targets = monitors()
+    if shutil.which("systemctl"):
+        _write_units()
+        _systemctl("daemon-reload", check=False)
+        for m in targets:
+            _systemctl("enable", "--now", f"kernel-kingdom-render@{m}.service", check=False)
+    else:
+        for m in targets:
+            if not _running(f"render-{m}"):
+                _detach(f"render-{m}", "reino.render", "--monitor", m)
+    return targets
+
+
+def wallpaper_off():
+    if shutil.which("systemctl"):
+        out = subprocess.run(["systemctl", "--user", "list-unit-files", "--plain", "--no-legend",
+                              "kernel-kingdom-render@*"], capture_output=True, text=True).stdout
+        units = {line.split()[0] for line in out.splitlines() if "@." not in line.split()[0]}
+        out = subprocess.run(["systemctl", "--user", "list-units", "--plain", "--no-legend", "kernel-kingdom-render@*"],
+                             capture_output=True, text=True).stdout
+        units |= {line.split()[0] for line in out.splitlines()}
+        for unit in units:
+            _systemctl("disable", "--now", unit, check=False)
+    for f in (paths.state_file().parent / "pids").glob("render-*.pid"):
+        if f.read_text().strip().isdigit() and _alive(int(f.read_text())):
+            os.kill(int(f.read_text()), signal.SIGTERM)
+        f.unlink(missing_ok=True)
+
+
+def cmd_wallpaper(args):
+    if args.state == "on":
+        print(ui("toast.wallpaper_on", monitors=", ".join(wallpaper_on())))
+    elif args.state == "off":
+        wallpaper_off()
+        print(ui("toast.wallpaper_off"))
+    else:
+        print("on" if wallpaper_status() else "off")
 
 
 def cmd_uninstall(args):
@@ -351,6 +413,8 @@ def main():
     inst = sub.add_parser("install", help="lanzador en el menú + arranque automático (systemd --user)")
     inst.add_argument("--monitors", default="all")
     inst.add_argument("--no-wallpaper", action="store_true", help="solo el mundo y el lanzador, sin fondo de pantalla")
+    wp = sub.add_parser("wallpaper", help="prender/apagar el fondo de pantalla (on, off, status)")
+    wp.add_argument("state", choices=["on", "off", "status"])
     sub.add_parser("uninstall")
     sub.add_parser("doctor")
     sub.add_parser("config", help="crea/muestra tu config de usuario")
@@ -377,7 +441,7 @@ def main():
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--snapshot", args.png, *args.extra])
     if args.cmd == "story":
         return cmd_story(args)
-    return {"window": cmd_window, "stop": cmd_stop, "install": cmd_install, "uninstall": cmd_uninstall,
+    return {"window": cmd_window, "stop": cmd_stop, "wallpaper": cmd_wallpaper, "install": cmd_install, "uninstall": cmd_uninstall,
             "doctor": cmd_doctor, "config": cmd_config}[args.cmd](args)
 
 

@@ -65,6 +65,20 @@ def _texture(surf) -> Gdk.Texture:
                                  GLib.Bytes.new(bytes(surf.get_data())), surf.get_stride())
 
 
+def _prefs() -> dict:
+    try:
+        return json.loads((paths.data_dir() / "prefs.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_prefs(**kw):
+    prefs = _prefs() | kw
+    f = paths.data_dir() / "prefs.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(prefs))
+
+
 def _find_monitor(spec: str) -> Gdk.Monitor | None:
     monitors = list(Gdk.Display.get_default().get_monitors())
     if spec.isdigit():
@@ -162,6 +176,8 @@ class Wallpaper:
 
         self.win.present()
         self._resume()
+        if not self.layered:
+            GLib.idle_add(self._first_run)
 
     # -- entrada del usuario -------------------------------------------------
 
@@ -207,6 +223,12 @@ class Wallpaper:
         p = self.painter
         ux, uy = x / self._base, y / self._base
         region = p.ui_region(ux, uy)
+        if p.dialog:                                # el diálogo espera respuesta: el resto no responde
+            action = p.dialog_action_at(ux, uy)
+            if action:
+                self._dialog_action(action, now)
+            self._render()
+            return
         if region == "menu_btn":                    # abrir / cerrar el menú
             p.toggle_menu()
         elif region == "menu":
@@ -244,6 +266,8 @@ class Wallpaper:
             p.toggle_menu(False)                    # elegido el poder, el menú se cierra para apuntar
         elif action[0] == "story":
             self._export_story(now)
+        elif action[0] == "wallpaper":
+            self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
             self.win.close()                        # el daemon (el mundo) sigue corriendo aparte
         elif action[0] == "new_world":
@@ -255,6 +279,43 @@ class Wallpaper:
             else:
                 p.confirm_new_until = now + 5
                 p._ui_dirty = True
+
+    # -- fondo de pantalla: la pregunta de la primera vez y el interruptor del menú ----
+
+    def _first_run(self):
+        from .. import cli
+        self.painter.wallpaper_on = cli.wallpaper_status()
+        self.painter._ui_dirty = True
+        if not _prefs().get("wallpaper_asked"):
+            self.painter.show_dialog(ui("dialog.wp.title"),
+                                     [(ui("dialog.wp.yes"), "wp_yes"), (ui("dialog.wp.no"), "wp_no")],
+                                     ui("dialog.wp.note"))
+        self._render()
+        return GLib.SOURCE_REMOVE
+
+    def _dialog_action(self, action: str, now: float):
+        _save_prefs(wallpaper_asked=True)
+        self.painter.close_dialog()
+        if action == "wp_yes":
+            self._set_wallpaper(True)
+
+    def _set_wallpaper(self, on: bool):
+        """Prende o apaga el fondo (servicios de systemd) sin trabar la ventana."""
+        import threading
+        from .. import cli
+
+        def work():
+            msg = ui("toast.wallpaper_on", monitors=", ".join(cli.wallpaper_on())) if on else \
+                (cli.wallpaper_off() or ui("toast.wallpaper_off"))
+            GLib.idle_add(done, msg)
+
+        def done(msg):
+            self.painter.wallpaper_on = on
+            self.painter._ui_dirty = True
+            self.painter.toast(msg, time.monotonic(), secs=6)
+            self._render()
+            return GLib.SOURCE_REMOVE
+        threading.Thread(target=work, daemon=True).start()
 
     def _export_story(self, now: float):
         from .. import story

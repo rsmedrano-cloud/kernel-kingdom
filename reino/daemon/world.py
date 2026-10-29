@@ -371,6 +371,8 @@ class World:
                 self.burn[i] = v - 1
                 if v == 1 and self.terrain[i] == FOREST:
                     self.terrain[i] = GRASS             # el fuego se llevó el bosque
+                if v == 1 and self.owner[i]:
+                    self.born[i] = self.tick            # se reconstruye: obra en construcción
         for i, v in enumerate(self.ruin):
             if v:
                 self.ruin[i] = v - 1
@@ -1046,19 +1048,34 @@ class World:
             if t < 0:
                 keep.append(e)                                  # todavía caminando
             elif t < e["work"]:
-                self._exp_work(e, t)
+                self._exp_work(e, t, events)
                 keep.append(e)
             else:
                 self._exp_finish(e, events)
         self.expeditions = keep
 
-    def _exp_work(self, e: dict, t: int):
+    def _exp_work(self, e: dict, t: int, events: list[dict]):
         if e["kind"] == "plant" and t % 2 == 0:                 # plantan de a una casilla
             tiles = e["data"]["tiles"]
             if t // 2 < len(tiles):
                 j = tiles[t // 2]
                 if self.terrain[j] in (GRASS, HILL, SAND) and self._wild(j):
                     self.terrain[j] = FOREST
+        elif e["kind"] == "army" and t % 5 == 0:
+            self._army_fight(e, events)
+        if e["kind"] in ("siegecity", "army") and t % 3 == 0 and self.rng.random() < 0.5:
+            self._war_damage(e, 2 if e["kind"] == "siegecity" else 1)
+
+    def _war_damage(self, e: dict, radius: int):
+        """Piedras de catapulta y antorchas: arde algún edificio enemigo cerca del asedio."""
+        tx, ty = e["target"]
+        enemy = e["data"].get("defender")
+        hits = [self.idx(x, y) for x in range(tx - radius, tx + radius + 1)
+                for y in range(ty - radius, ty + radius + 1) if 0 <= x < self.n and 0 <= y < self.n]
+        hits = [i for i in hits if self.owner[i] and self.owner[i] != e["fid"] and self.level[i]
+                and not self.burn[i] and (enemy is None or self.owner[i] == enemy)]
+        if hits:
+            self.burn[self.rng.choice(hits)] = 25
 
     def _exp_finish(self, e: dict, events: list[dict]):
         f = next((f for f in self.factions.values() if f["id"] == e["fid"]), None)
@@ -1175,20 +1192,11 @@ class World:
             border = [i for i, o in enumerate(self.owner) if o == dfn["id"]
                       and any(self.owner[j] == att["id"] for j in self.neighbors(i))
                       and (list(self.xy(i)) != list(dfn["capital"]) or dfn["tiles"] < 6)]
-            # lo conquistable en una guerra tiene tope: mueve fronteras, no borra reinos
-            room = max(10, int(0.4 * dfn.get("target", 0))) - war["score"].get(str(att["id"]), 0)
+            room = self._war_room(war, att, dfn)
             if border and room <= 0:
                 pass                                          # ya ganó lo que podía ganar en esta guerra
             elif border:
-                lost = rng.sample(border, min(len(border), rng.randint(1, 2), room))
-                for i in lost:
-                    self.owner[i] = att["id"]
-                    self.born[i] = self.tick
-                    self.burn[i] = 8                          # arrasada: quemada un rato
-                    events.append({"type": "conquest", "x": i % self.n, "y": i // self.n, "faction": att["id"]})
-                att["bonus"] = att.get("bonus", 0) + len(lost)
-                dfn["bonus"] = max(0, dfn.get("bonus", 0) - len(lost))
-                self._battle(att, dfn, lost)
+                self._raze(att, dfn, rng.sample(border, min(len(border), rng.randint(1, 2), room)), events)
             elif att["id"] == war["a"]:
                 # sin frontera común: el atacante avanza hacia el enemigo (colonos armados)
                 fa_tiles = [i for i, o in enumerate(self.owner) if o == att["id"]]
@@ -1205,6 +1213,42 @@ class World:
                              war=key, defender=dfn["id"])
                 self._say("guerra", "exp.siegecity.start", dfn["capital"], a=att["realm"], b=dfn["realm"])
 
+    def _war_room(self, war: dict, att: dict, dfn: dict) -> int:
+        """Lo conquistable en una guerra tiene tope: mueve fronteras, no borra reinos."""
+        return max(10, int(0.4 * dfn.get("target", 0))) - war["score"].get(str(att["id"]), 0)
+
+    def _raze(self, att: dict, dfn: dict, lost: list[int], events: list[dict]):
+        """Casillas tomadas a sangre y fuego: cambian de dueño y arden (y el
+        fuego alcanza algún edificio vecino)."""
+        for i in lost:
+            self.owner[i] = att["id"]
+            self.born[i] = self.tick
+            self.burn[i] = 30
+            for j in self.neighbors(i):
+                if self.owner[j] == dfn["id"] and self.level[j] and self.rng.random() < 0.3:
+                    self.burn[j] = 20
+            events.append({"type": "conquest", "x": i % self.n, "y": i // self.n, "faction": att["id"]})
+        att["bonus"] = att.get("bonus", 0) + len(lost)
+        dfn["bonus"] = max(0, dfn.get("bonus", 0) - len(lost))
+        self._battle(att, dfn, lost)
+
+    def _army_fight(self, e: dict, events: list[dict]):
+        """Un ejército que llegó a tierra enemiga pelea casilla por casilla
+        alrededor de donde acampó: así una guerra entre reinos lejanos tiene frente."""
+        d = e["data"]
+        by_id = {f["id"]: f for f in self.factions.values()}
+        att, dfn, war = by_id.get(e["fid"]), by_id.get(d.get("defender")), self.wars.get(d.get("war", ""))
+        if not (att and dfn and war and att.get("alive") and dfn.get("alive")) or self._war_room(war, att, dfn) <= 0:
+            return
+        tx, ty = e["target"]
+        cap_i = self.idx(*dfn["capital"])
+        cand = [i for i in (self.idx(x, y) for x in range(tx - 2, tx + 3) for y in range(ty - 2, ty + 3)
+                            if 0 <= x < self.n and 0 <= y < self.n)
+                if self.owner[i] == dfn["id"] and i != cap_i
+                and (i == self.idx(tx, ty) or any(self.owner[j] == att["id"] for j in self.neighbors(i)))]
+        if cand:
+            self._raze(att, dfn, [self.rng.choice(cand)], events)
+
     def _declare_war(self, a: dict, b: dict):
         key = ":".join(map(str, sorted((a["id"], b["id"]))))
         reason = self.rng.choice(words("war_reasons")).format(place=self.lore.place(f"motivo:{self.tick}"))
@@ -1216,14 +1260,16 @@ class World:
         target = min((i for i, o in enumerate(self.owner) if o == b["id"]),
                      key=lambda i: self._dist(i, a["capital"]), default=None)
         if target is not None:
-            self._launch("army", a, target, work=40, n=10)
+            self._launch("army", a, target, work=40, n=10, war=key, defender=b["id"])
+            self._say("guerra", "exp.army.march", self.xy(target), realm=a["realm"],
+                      place=self.lore.place(f"batalla:{target}"))
 
     def _sack_capital(self, att: dict, dfn: dict, events: list[dict]):
         """Saqueo: arde el centro, el tesoro del atacante crece y la corte huye
         a la tierra propia más lejana del enemigo: la ciudad se rearma allá."""
         cap = self.idx(*dfn["capital"])
         for j in [cap, *self.neighbors(cap)]:
-            self.burn[j] = 20
+            self.burn[j] = 40
         self.resources["gold"] += 60
         events.append({"type": "lightning", "x": cap % self.n, "y": cap // self.n})
         self._say("guerra", "capital.sacked", dfn["capital"], a=att["realm"], b=dfn["realm"], gold=60)
@@ -1472,7 +1518,7 @@ class World:
             ruler = self.lore.ruler_str(a["ruler"])
             self._say("guerra", "war.start", self.xy(lost[0]), war=war["name"], War=cap(war["name"]),
                       a=a["realm"], b=d["realm"], Ruler=cap(ruler))
-            self._launch("army", a, lost[0], work=40, n=10)
+            self._launch("army", a, lost[0], work=40, n=10, war=key, defender=d["id"])
             self._say("guerra", "exp.army.march", self.xy(lost[0]), realm=a["realm"],
                       place=self.lore.place(f"batalla:{lost[0]}"))
         war["last"] = self.tick
@@ -1480,7 +1526,7 @@ class World:
         war["front"] = (war["front"] + [list(self.xy(i)) for i in lost])[-12:]
         self._say("guerra", "battle", self.xy(lost[0]), f"battle:{key}", 150,
                   place=self.lore.place(f"batalla:{lost[0]}"), war=war["name"], a=a["realm"], b=d["realm"],
-                  n=len(lost))
+                  n=f"{len(lost)} {words('lands')[len(lost) != 1]}")
 
     # Sociedad: héroes, paz, fe, monumentos, días ------------------------------
 
