@@ -20,6 +20,7 @@ import zlib
 import cairo
 
 from .. import buildings as B
+from .. import i18n
 from ..i18n import ui, words
 
 TW, TH = 16, 8                       # rombo de casilla 2:1
@@ -1152,6 +1153,8 @@ class Painter:
         prev_tick = self.state["tick"] if self.state else None
         self.state = state
         self._state_t = now
+        if state.get("lang") and state["lang"] != i18n.LANG:   # el idioma lo manda el daemon
+            i18n.set_lang(state["lang"])
         self.interval = state.get("interval", self.interval)
         self._ui_dirty = True
         if self._bbox_terrain != state["terrain"]:
@@ -1864,6 +1867,7 @@ class Painter:
             add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.share')}", TEXT, ("share",))
+        add(f"  {ui('menu.language')}", TEXT, ("language",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
         confirming = self.confirm_new_until > time.monotonic()
         add(f"  {ui('menu.new_confirm') if confirming else ui('menu.new')}",

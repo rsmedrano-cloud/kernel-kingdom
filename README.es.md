@@ -26,7 +26,7 @@ kernel-kingdom            # fondo de pantalla en todos los monitores, en segundo
 kernel-kingdom window     # abre la ventana: zoom, poderes, reinos, crónica (también desde el lanzador)
 kernel-kingdom stop       # detiene todo
 kernel-kingdom story      # la historia del día (.md + .txt)
-kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (language: auto, es, en)
+kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (el idioma también en Menú > Mundo)
 kernel-kingdom update     # baja la última versión (tu mundo se conserva)
 kernel-kingdom uninstall
 ```

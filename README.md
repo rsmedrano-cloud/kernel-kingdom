@@ -26,7 +26,7 @@ kernel-kingdom            # wallpaper on every monitor, in the background (the t
 kernel-kingdom window     # open the window: zoom, powers, realms, chronicle (also from the app launcher)
 kernel-kingdom stop       # stop everything
 kernel-kingdom story      # the story of the day (.md + .txt)
-kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language: auto, en, es)
+kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language also in Menu > World)
 kernel-kingdom update     # get the latest version (your world is kept)
 kernel-kingdom uninstall
 ```

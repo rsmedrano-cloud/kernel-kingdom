@@ -420,6 +420,8 @@ UI = {
     "share.empty": "Todavía no pasó nada hoy para compartir.",
     "share.subtitle": "{date} · {parts}",
     "share.footer": "Kernel Kingdom · mi computadora es un reino · github.com/rsmedrano-cloud/kernel-kingdom",
+    "menu.language": "Idioma: Español (cambiar a English)",
+    "toast.language": "Idioma: Español. Lo que pase desde ahora se escribe en castellano.",
     "dialog.wp.title": "¿Querés ver tu reino también como fondo de pantalla?",
     "dialog.wp.yes": "Sí, como fondo de pantalla (y esta ventana para jugar)",
     "dialog.wp.no": "No, solo la ventana",

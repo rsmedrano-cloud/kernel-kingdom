@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kernel-kingdom"
-version = "0.2.0"
+version = "0.2.1"
 description = "Pixel-art isometric live wallpaper / idle game whose kingdoms grow from your system's processes, RAM, CPU and containers."
 readme = "README.md"
 license = "MIT"

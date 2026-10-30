@@ -59,6 +59,7 @@ def new_world(world: World, cfg: dict) -> World:
 def build_state(world: World, snap: dict, events: list[dict], interval: float) -> dict:
     state = world.to_state()
     state.update(
+        lang=i18n.LANG,
         t=snap["t"],
         interval=interval,
         events=events,
@@ -130,6 +131,10 @@ def main():
         if any(c.get("action") == "new_world" for c in commands):
             world = new_world(world, cfg)
             commands = []
+        for c in [c for c in commands if c.get("action") == "language"]:
+            i18n.set_lang(c.get("lang", "auto"))         # lo que pase de ahora en más, en ese idioma
+            world._refresh_names()
+        commands = [c for c in commands if c.get("action") != "language"]
         events = world.step(snap, commands)
         fresh = world.chronicle.take_fresh()
         story.archive(fresh)                               # historia del día, sin límite de entradas

@@ -409,6 +409,8 @@ UI = {
     "share.empty": "Nothing has happened today to share yet.",
     "share.subtitle": "{date} · {parts}",
     "share.footer": "Kernel Kingdom · my computer is a kingdom · github.com/rsmedrano-cloud/kernel-kingdom",
+    "menu.language": "Language: English (switch to Español)",
+    "toast.language": "Language: English. From now on the chronicle is written in English.",
     "dialog.wp.title": "Do you also want your kingdom as your desktop wallpaper?",
     "dialog.wp.yes": "Yes, as the wallpaper (and this window to play)",
     "dialog.wp.no": "No, just the window",

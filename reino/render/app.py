@@ -277,6 +277,8 @@ class Wallpaper:
         elif action[0] == "update":
             p.toggle_menu(False)
             self._do_update()
+        elif action[0] == "language":
+            self._switch_language(now)
         elif action[0] == "wallpaper":
             self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
@@ -340,6 +342,17 @@ class Wallpaper:
             from .. import cli
             cli.relaunch_window()
             self.win.get_application().quit()
+
+    def _switch_language(self, now: float):
+        """Castellano <-> inglés: queda en la config y el daemon escribe en ese idioma
+        de ahora en más (los fondos de pantalla lo siguen a través del estado)."""
+        from .. import config, i18n
+        lang = "en" if i18n.LANG == "es" else "es"
+        config.set_top_level("language", lang)
+        self._send_command({"action": "language", "lang": lang})
+        i18n.set_lang(lang)
+        self.painter._ui_dirty = True
+        self.painter.toast(ui("toast.language"), now, secs=8)
 
     # -- actualizaciones ---------------------------------------------------------
 
