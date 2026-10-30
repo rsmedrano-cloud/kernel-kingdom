@@ -18,7 +18,8 @@ curl -fsSL https://raw.githubusercontent.com/rsmedrano-cloud/kernel-kingdom/main
 It installs into `~/.local/share/kernel-kingdom`, links `~/.local/bin/kernel-kingdom`, checks
 your system (`kernel-kingdom doctor`) and enables autostart with the session
 (`systemd --user`). It needs GTK 4, gtk4-layer-shell and PyGObject from your
-distro; the installer tells you the exact package command if any is missing.
+distro: if any is missing, the installer shows the exact command and offers to run it
+(on Fedora Atomic it layers them with `rpm-ostree`; reboot and run it again).
 
 ```bash
 kernel-kingdom            # wallpaper on every monitor, in the background (the terminal is free right away)
@@ -41,7 +42,7 @@ to show, the Sovereign powers and the world actions; the chronicle has its own
 |---|---|
 | Browser / Electron app (root process + children) | An **empire**: RAM decides how much land it takes, child processes how dense it gets. Real town planning: palace, square, grid streets with wells, market, tavern, temple, barracks, library, workshops, graveyard; farms, pastures with sheep, sawmills and docks on the outskirts; watchtowers on contested borders. |
 | Other heavy apps (Claude, terminals, Steam...) | **Hamlets** with a landmark: oracle, smithy, arena, theater, tavern, watchtower... |
-| Two realms touching | **Named wars** ("the War of the Orphaned Tabs"), battles, soldiers marching from the barracks, and peace treaties. |
+| Two realms touching | **Named wars** ("the War of the Orphaned Tabs"): armies march, soldiers clash on the front, trebuchets bombard cities, houses burn, capitals get sacked; then peace treaties. |
 | A browser restarts | **Dynasty change**: the monarch dies, abdicates or is overthrown. |
 | Containers / databases / daemons | **Citadels, vaults and bastions** whose walls grow with uptime and whose shields block lightning. |
 | Editors and compilers | The **Academy** tower: one floor per editor, smoke while compiling. |
@@ -123,11 +124,13 @@ in the `input` group; otherwise only presence/absence is detected.
 
 ## How it works
 
+The Python package is called `reino` (Spanish for *kingdom*; the project started in Spanish).
+
 ```
 reino/daemon   samples the system (psutil, `last`, Wayland idle), runs the world,
                writes state.json to $XDG_RUNTIME_DIR every 2 s
 reino/render   GTK 4 + gtk4-layer-shell; procedural pixel-art sprites (cairo),
-               isometric painter, chronicle, powers bar
+               isometric painter, battles and fires, chronicle, Menu
 reino/wl.py    tiny pure-Python Wayland client (window coverage, idle)
 reino/locales  all text, Spanish and English
 ```

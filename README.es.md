@@ -17,8 +17,9 @@ curl -fsSL https://raw.githubusercontent.com/rsmedrano-cloud/kernel-kingdom/main
 
 Instala en `~/.local/share/kernel-kingdom`, deja el comando `~/.local/bin/kernel-kingdom`,
 revisa tu sistema (`kernel-kingdom doctor`) y lo deja arrancando con la sesión
-(`systemd --user`). Necesita GTK 4, gtk4-layer-shell y PyGObject de tu distro; si
-falta algo, el instalador te dice el comando exacto.
+(`systemd --user`). Necesita GTK 4, gtk4-layer-shell y PyGObject de tu distro: si
+falta algo, el instalador te muestra el comando exacto y se ofrece a correrlo
+(en Fedora Atomic los agrega con `rpm-ostree`; reiniciás y lo volvés a correr).
 
 ```bash
 kernel-kingdom            # fondo de pantalla en todos los monitores, en segundo plano (la terminal queda libre)
@@ -41,7 +42,7 @@ propio botón **Descargar día**.
 |---|---|
 | Navegador / app Electron (proceso raíz + hijos) | **Imperio**: la RAM decide cuánta tierra ocupa, los procesos hijos cuán denso es. Plan urbano: palacio, plaza, calles en grilla con pozos, mercado, taberna, templo, cuartel, biblioteca, talleres, cementerio; en las afueras granjas, pasturas con ovejas, aserraderos y muelles; atalayas en las fronteras disputadas. |
 | Otras apps pesadas (Claude, terminales, Steam...) | **Aldeas** con un emblema: oráculo, herrería, arena, teatro, taberna, atalaya... |
-| Dos reinos que se tocan | **Guerras con nombre** ("la Guerra de las Pestañas Huérfanas"), batallas, soldados que marchan del cuartel al frente, y tratados de paz. |
+| Dos reinos que se tocan | **Guerras con nombre** ("la Guerra de las Pestañas Huérfanas"): marchan ejércitos, los soldados chocan en el frente, los trebuchets bombardean ciudades, arden casas, se saquean capitales; después, tratados de paz. |
 | Se reinicia un navegador | **Cambio de dinastía**: el monarca muere, abdica o lo derrocan. |
 | Contenedores / bases de datos / daemons | **Ciudadelas, bóvedas y bastiones** con murallas que crecen con el uptime y escudos contra rayos. |
 | Editores y compiladores | La **Academia**: un piso por editor, humo mientras compilás. |
@@ -122,11 +123,13 @@ esté en el grupo `input`; si no, solo se detecta si estás presente o ausente.
 
 ## Cómo está hecho
 
+El paquete de Python se llama `reino` (el proyecto nació en castellano).
+
 ```
 reino/daemon   muestrea el sistema (psutil, `last`, idle de Wayland), simula el
                mundo y escribe state.json en $XDG_RUNTIME_DIR cada 2 s
 reino/render   GTK 4 + gtk4-layer-shell; sprites pixel art procedurales (cairo),
-               pintor isométrico, crónica, barra de poderes
+               pintor isométrico, batallas e incendios, crónica, Menú
 reino/wl.py    cliente Wayland mínimo en Python puro (cobertura de ventanas, idle)
 reino/locales  todos los textos, castellano e inglés
 ```
