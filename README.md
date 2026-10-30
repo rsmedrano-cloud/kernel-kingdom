@@ -24,8 +24,10 @@ distro: if any is missing, the installer shows the exact command and offers to r
 ```bash
 kernel-kingdom            # wallpaper on every monitor, in the background (the terminal is free right away)
 kernel-kingdom window     # open the window: zoom, powers, realms, chronicle (also from the app launcher)
+kernel-kingdom window --mini  # a small window with an auto camera, for a corner of your screen
 kernel-kingdom stop       # stop everything
 kernel-kingdom story      # the story of the day (.md + .txt)
+kernel-kingdom timelapse  # GIF of how the borders moved today
 kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language also in Menu > World)
 kernel-kingdom update     # get the latest version (your world is kept)
 kernel-kingdom uninstall
@@ -100,6 +102,17 @@ The wallpaper is for watching: clicks go through to your desktop. Open
   the nearest city to raise your lighthouse or wonder, druids plant the forest
   tile by tile.
 - **While you were away**: reopen the window after a while and it sums up what happened.
+- **Mini mode** (`m` or Menu > View): no panels, the camera flies by itself to
+  whatever is happening (the dragon, a battle, a siege, a wonder going up, the
+  latest event, or a slow tour of the capitals) with a news strip at the bottom.
+  Made to sit in a corner of a second screen (keep the window floating).
+- **Timelapse of the day** (Menu > World): the world snapshots the borders every
+  10 minutes (~2 KB each) and builds a GIF of the day's wars and migrations.
+
+Small things happen too: fireworks for peace treaties and wonders, refugees
+leaving a fallen realm, a mourning procession when a monarch dies, bird flocks,
+whales spouting off the coast (and, rarely, a sea serpent), shooting stars and
+auroras at night, snow in winter.
 - **Every realm, living or fallen**, in a scrollable list; click one to fly to its capital.
 - **The whole chronicle**: scroll back through history, `c` expands it, PgUp/PgDn.
 

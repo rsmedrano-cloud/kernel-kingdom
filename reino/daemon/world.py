@@ -1712,7 +1712,7 @@ class World:
             if not (a and b):
                 continue
             winner = max((a, b), key=lambda f: war["score"].get(str(f["id"]), 0))
-            self._say("paz", "peace", place=self.lore.place("paz:" + key), war=war["name"],
+            self._say("paz", "peace", winner["capital"], place=self.lore.place("paz:" + key), war=war["name"],
                       mins=f"{(self.tick - war['start']) * self.cfg['daemon']['interval'] / 60:.0f}",
                       winner=winner["realm"], n=war["score"].get(str(winner["id"]), 0), a=a["realm"], b=b["realm"])
 

@@ -1,9 +1,10 @@
-"""Muestreo del sistema con psutil.
+"""Muestreo del sistema.
 
-Una pasada por el árbol de procesos por tick. Solo pedimos atributos que salen
-de /proc/<pid>/stat y /statm (baratos); nada de memory_full_info ni
-open_files, que leen smaps y son caros. La cmdline solo se lee para los
-procesos de contenedores, y se cachea.
+Una pasada por el árbol de procesos por tick leyendo un solo archivo por
+proceso (/proc/<pid>/stat: nombre, padre, tiempos de CPU, arranque y RSS); con
+cientos de procesos, psutil abre varios por cada uno y cuesta 10 veces más.
+Fuera de Linux se usa psutil. La cmdline solo se lee para nombres truncados y
+para los procesos de contenedores, y se cachea.
 """
 import os
 import platform
@@ -15,6 +16,47 @@ import psutil
 
 _ATTRS = ["pid", "ppid", "name", "memory_info", "cpu_times", "create_time"]
 MB = 1024 * 1024
+_TICK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
+_PAGE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+
+
+def scan_proc(long_names: dict) -> dict[int, dict] | None:
+    """{pid: {pid, ppid, name, rss, cpu, create_time}} leyendo /proc/<pid>/stat.
+    `long_names` cachea los nombres de más de 15 letras (el kernel los corta).
+    None si no hay /proc (se usa psutil)."""
+    try:
+        boot = psutil.boot_time()
+        pids = [int(d) for d in os.listdir("/proc") if d.isdigit()]
+    except OSError:
+        return None
+    out = {}
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/stat", "rb") as f:
+                raw = f.read()
+        except OSError:
+            continue                                   # terminó entre listar y leer
+        i, j = raw.find(b"("), raw.rfind(b")")
+        name = raw[i + 1:j].decode("utf-8", "replace")
+        f = raw[j + 2:].split()
+        try:
+            start = boot + int(f[19]) / _TICK
+            if len(name) == 15:                        # nombre truncado: el completo sale de la cmdline
+                key = (pid, start)
+                if key not in long_names:
+                    try:
+                        with open(f"/proc/{pid}/cmdline", "rb") as c:
+                            arg0 = c.read().split(b"\0", 1)[0].decode("utf-8", "replace")
+                        full = os.path.basename(arg0.split(" ")[0])
+                        long_names[key] = full if full.startswith(name) else name
+                    except OSError:
+                        long_names[key] = name
+                name = long_names[key]
+            out[pid] = {"pid": pid, "ppid": int(f[1]), "name": name, "rss": int(f[21]) * _PAGE,
+                        "cpu": (int(f[11]) + int(f[12])) / _TICK, "create_time": start}
+        except (IndexError, ValueError):
+            continue
+    return out
 
 
 def _arg_after(cmdline: list[str], flags: tuple[str, ...]) -> str | None:
@@ -48,6 +90,8 @@ class SystemProbe:
         self._last = {"sessions": [], "boots": [], "visits": {}}
         self._prev_t: float | None = None
         self._container_names: dict[tuple[int, float], str | None] = {}
+        self._long_names: dict[tuple[int, float], str] = {}
+        self._temp_at, self._temp = -1e9, None
         psutil.cpu_percent(None)  # inicializa el contador interno
 
     # -- clasificación ------------------------------------------------------
@@ -109,16 +153,21 @@ class SystemProbe:
             "disk_w": disk.write_bytes if disk else 0,
         }
 
-    @staticmethod
-    def _cpu_temp() -> float | None:
+    def _cpu_temp(self) -> float | None:
+        """Leer los sensores cuesta varios ms: se refresca cada 10 s."""
+        now = time.monotonic()
+        if now - self._temp_at < 10:
+            return self._temp
+        self._temp_at, self._temp = now, None
         try:
             temps = psutil.sensors_temperatures()
         except (AttributeError, OSError):
             return None
         for chip in ("k10temp", "coretemp", "zenpower", "cpu_thermal"):
             if temps.get(chip):
-                return max(t.current for t in temps[chip])
-        return None
+                self._temp = max(t.current for t in temps[chip])
+                break
+        return self._temp
 
     def logins(self) -> dict:
         """Sesiones abiertas, reinicios y visitas pasadas según `last` (wtmp/wtmpdb).
@@ -157,18 +206,24 @@ class SystemProbe:
         dt = (now - self._prev_t) if self._prev_t else None
         self._prev_t = now
 
-        procs: dict[int, dict] = {}
-        for p in psutil.process_iter(_ATTRS, ad_value=None):
-            procs[p.info["pid"]] = p.info
+        procs = scan_proc(self._long_names)
+        if procs is None:
+            procs = {}
+            for p in psutil.process_iter(_ATTRS, ad_value=None):
+                i = p.info
+                procs[i["pid"]] = {"pid": i["pid"], "ppid": i["ppid"], "name": i["name"],
+                                   "rss": i["memory_info"].rss if i["memory_info"] else 0,
+                                   "cpu": (i["cpu_times"].user + i["cpu_times"].system) if i["cpu_times"] else None,
+                                   "create_time": i["create_time"]}
+        self._long_names = {k: v for k, v in self._long_names.items() if k[0] in procs}
 
         # CPU por proceso = delta de tiempo de CPU entre ticks (% de un núcleo)
         pcpu: dict[int, float] = {}
         cur_cpu: dict[int, tuple[float, float]] = {}
         for pid, info in procs.items():
-            ct = info["cpu_times"]
-            if ct is None:
+            total = info["cpu"]
+            if total is None:
                 continue
-            total = ct.user + ct.system
             cur_cpu[pid] = (info["create_time"], total)
             prev = self._prev_cpu.get(pid)
             if dt and prev and prev[0] == info["create_time"]:
@@ -187,8 +242,7 @@ class SystemProbe:
         def group(table, key, info, **extra):
             g = table.setdefault(key, {"procs": 0, "rss_mb": 0.0, "cpu": 0.0, "started": wall, **extra})
             g["procs"] += 1
-            if info["memory_info"]:
-                g["rss_mb"] += info["memory_info"].rss / MB
+            g["rss_mb"] += info["rss"] / MB
             g["cpu"] += pcpu.get(info["pid"], 0.0)
             if info["create_time"]:
                 g["started"] = min(g["started"], info["create_time"])

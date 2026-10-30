@@ -2,6 +2,7 @@
 
     kernel-kingdom                 # daemon + wallpaper en todos los monitores, en segundo plano
     kernel-kingdom window          # abre la ventana (zoom, poderes) y devuelve la terminal
+    kernel-kingdom window --mini   # ventanita con cámara automática, para tener en un rincón
     kernel-kingdom stop            # detiene todo
     kernel-kingdom install         # lanzador en el menú + arranque automático con la sesión
     kernel-kingdom uninstall
@@ -10,6 +11,7 @@
     kernel-kingdom chronicle       # imprime la crónica
     kernel-kingdom story           # la historia del día como relato (.md y .txt)
     kernel-kingdom update          # baja la última versión y reinicia lo que esté corriendo
+    kernel-kingdom timelapse       # GIF de cómo cambiaron las fronteras hoy
     kernel-kingdom snapshot out.png
 """
 import argparse
@@ -161,7 +163,7 @@ def cmd_window(args):
     ensure_daemon()
     if args.foreground:
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--windowed"])
-    _detach("window", "reino.render", "--windowed")
+    _detach("window", "reino.render", "--windowed", *(["--mini"] if getattr(args, "mini", False) else []))
     print(ui("cli.window"))
 
 
@@ -450,12 +452,15 @@ def main():
     run.add_argument("-f", "--foreground", action="store_true", help="en esta terminal, con logs (desarrollo)")
     win = sub.add_parser("window", help="abre la ventana (con zoom y poderes) y devuelve la terminal")
     win.add_argument("-f", "--foreground", action="store_true")
+    win.add_argument("--mini", action="store_true", help="ventana chica con cámara automática (tecla m)")
     sub.add_parser("stop", help="detiene todo (ventana, wallpaper y daemon)")
     inst = sub.add_parser("install", help="lanzador en el menú + arranque automático (systemd --user)")
     inst.add_argument("--monitors", default="all")
     inst.add_argument("--no-wallpaper", action="store_true", help="solo el mundo y el lanzador, sin fondo de pantalla")
     wp = sub.add_parser("wallpaper", help="prender/apagar el fondo de pantalla (on, off, status)")
     wp.add_argument("state", choices=["on", "off", "status"])
+    tl = sub.add_parser("timelapse", help="GIF de cómo cambiaron las fronteras en el día")
+    tl.add_argument("--date", help="AAAA-MM-DD (por defecto, hoy)")
     up = sub.add_parser("update", help="baja la última versión y reinicia lo que esté corriendo")
     up.add_argument("--force", action="store_true", help="reinstalar aunque no haya versión nueva")
     sub.add_parser("uninstall")
@@ -484,6 +489,11 @@ def main():
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--snapshot", args.png, *args.extra])
     if args.cmd == "story":
         return cmd_story(args)
+    if args.cmd == "timelapse":
+        from . import timelapse
+        out = timelapse.export(args.date)
+        print(ui("timelapse.saved", path=out) if out else ui("timelapse.empty"))
+        return 0 if out else 1
     return {"window": cmd_window, "stop": cmd_stop, "update": cmd_update, "wallpaper": cmd_wallpaper, "install": cmd_install, "uninstall": cmd_uninstall,
             "doctor": cmd_doctor, "config": cmd_config}[args.cmd](args)
 

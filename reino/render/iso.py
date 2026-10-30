@@ -118,7 +118,7 @@ def fit_scale(w: int, h: int, content: tuple[int, int], mode) -> float:
 def zoom_scales(base: float) -> list[float]:
     """Escalas de zoom: la base y después enteros pares (con detalle ×2, cada pixel
     nativo ocupa un número entero de pixels de pantalla: nada de pixels desparejos)."""
-    return [base] + [float(s) for s in (4, 6, 8, 10, 12, 16) if s > base + 0.5]
+    return [base] + [float(s) for s in (2, 4, 6, 8, 10, 12, 16) if s > base + 0.5]
 
 
 def detail_for(scale: float) -> int:
@@ -1070,6 +1070,9 @@ class Painter:
         self.show_powers = True
         self.window_mode = False          # en la ventana se actúa; el fondo de pantalla es solo para mirar
         self.view = {"status": True, "realms": False, "chron": True}   # paneles a la vista en la ventana
+        self.mini = False                  # ventana chiquita: sin paneles, cámara director y una tira de noticias
+        self.director = {"key": None, "prio": 99, "since": -1e9, "caption": "", "pt": None}
+        self.ticker = None
         self.menu_open = False
         self.menu_panel = self.menu_button = None
         self.chron_buttons: list = []
@@ -1270,6 +1273,82 @@ class Painter:
             return False
         w = self.state["weather"]
         return bool(w["storm"] or w["eruption"] or self.lava_px or self.bolts)
+
+    def wants_motion(self) -> bool:
+        """Hay algo que se mueve rápido (batalla, dragón, fuego, fiesta): conviene ~15 FPS."""
+        st = self.state
+        if not st:
+            return False
+        recent = time.time() - 180
+        return bool(st.get("wars") or st.get("dragon") or self.burn_px or self.mini or any(
+            e.get("t", 0) > recent and e.get("k") in ("peace", "power.tregua", "wonder.done", "monument", "fall",
+                                                      "dyn.succession") for e in st.get("chronicle", [])[-20:]))
+
+    # -- cámara director (modo mini) -------------------------------------------
+
+    def _near_text(self, x: int, y: int) -> str:
+        """Lo último que contó la crónica cerca de (x, y)."""
+        for e in reversed(self.state.get("chronicle", [])[-60:]):
+            if "x" in e and abs(e["x"] - x) <= 4 and abs(e["y"] - y) <= 4:
+                return e["text"]
+        f = next((f for f in self.state["factions"] if f["id"] == self.state["owner"][y * self.state["w"] + x]), None)
+        return (f.get("display") or f.get("realm", "")) if f else ""
+
+    def director_step(self, now: float, dt: float):
+        """Elige qué mirar (dragón > batalla > asedio u obra > suceso reciente >
+        recorrida por las capitales), se queda ~15 s en cada cosa y lleva la cámara
+        suavemente hasta ahí."""
+        st = self.state
+        if not st:
+            return
+        n = st["w"]
+        wall = time.time()
+
+        def at(x, y):
+            cx, cy = self.tile_xy(x, y, self.elev_at(x, y))
+            return cx, cy + TH // 2
+
+        cands = []                                         # (prioridad, clave, x, y, leyenda)
+        d = st.get("dragon")
+        if d:
+            cands.append((0, "dragon", *at(d["x"], d["y"]), self._near_text(d["x"], d["y"])))
+        for (pa, pb, fa, fb, z, k) in self.war_melee[:3]:
+            war = next((w for w in (st.get("wars") or {}).values() if {w["a"], w["b"]} == {fa, fb}), None)
+            cands.append((1, f"melee:{k}:{fa}:{fb}", (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2,
+                          war["name"][:1].upper() + war["name"][1:] if war else ""))
+        tick = st["tick"]
+        for e in st.get("expeditions", []):
+            if tick - e["start"] < e["eta"] or e["kind"] not in ("siegecity", "siege", "army", "build"):
+                continue
+            i = e["path"][-1]
+            cands.append((1 if e["kind"] != "build" else 2, f"exp:{e['id']}", *self._center(i),
+                          self._near_text(i % n, i // n)))
+        for e in reversed(st.get("chronicle", [])[-30:]):
+            if "x" in e and wall - e.get("t", 0) < 180 and e.get("k") in _MARKERS and 0 <= e["x"] < n:
+                cands.append((3, f"ev:{e.get('tick')}:{e.get('k')}", *at(e["x"], e["y"]), e["text"]))
+        for f in sorted((f for f in st["factions"] if f.get("alive")), key=lambda f: f["id"]):
+            cands.append((5, f"cap:{f['id']}", *at(*f["capital"]), f.get("display") or f.get("realm", "")))
+        if not cands:
+            return
+        cur = self.director
+        best = min(c[0] for c in cands)
+        same = [c for c in cands if c[0] == best]
+        mine = next((c for c in cands if c[1] == cur["key"]), None)
+        if mine and mine[0] == best and (now - cur["since"] < 15 or len(same) == 1):
+            pick = mine
+        else:
+            keys = [c[1] for c in same]
+            k = (keys.index(cur["key"]) + 1) % len(same) if cur["key"] in keys else 0
+            pick = same[k]
+            cur["since"] = now
+        if pick[1] != cur["key"] or pick[4] != cur["caption"]:
+            self._ui_dirty = True                          # cambia la leyenda de la tira
+        cur.update(key=pick[1], prio=pick[0], caption=pick[4], pt=(pick[2], pick[3]))
+        ww, wh = self.world_size()
+        tx, ty = pick[2] - ww / 2, pick[3] - wh / 2
+        a = min(1.0, dt * 1.5)                              # paneo suave
+        self.pan[0] += (tx - self.pan[0]) * a
+        self.pan[1] += (ty - self.pan[1]) * a
 
     # -- mundo (estático) ----------------------------------------------------
 
@@ -1727,9 +1806,21 @@ class Painter:
         if not st:
             return
         # en la ventana cada panel se prende y apaga desde el menú; el fondo muestra lo de siempre
-        show_status = self.show_hud and (not self.window_mode or self.view["status"])
-        show_realms = not self.window_mode or self.view["realms"]
-        show_chron = self.show_chronicle and (self.chron_mode if not self.window_mode else self.view["chron"])
+        show_status = self.show_hud and (not self.window_mode or self.view["status"]) and not self.mini
+        show_realms = (not self.window_mode or self.view["realms"]) and not self.mini
+        show_chron = self.show_chronicle and (self.chron_mode if not self.window_mode else self.view["chron"]) \
+            and not self.mini
+        self.ticker = None
+        if self.mini:
+            last = next((e["text"] for e in reversed(st.get("chronicle", []))), "")
+            cap_ = self.director.get("caption") or ""
+            rows = [(t, col, None) for t, col in ((cap_, GOLD), (last if last != cap_ else "", TEXT)) if t]
+            if rows:
+                wrapped = []
+                for text, col, _ in rows:
+                    lines_ = _wrap(_MEASURE, text, fw - 24)
+                    wrapped += [(ln, col, None) for ln in lines_[:2]]
+                self.ticker = _panel(wrapped, width=fw - 12)
         m, r, w = st["metrics"], st["resources"], st["weather"]
         act = st.get("activity", {})
         temp = f"  {m['cpu_temp']:.0f}°C" if m.get("cpu_temp") else ""
@@ -1815,7 +1906,7 @@ class Painter:
             self.chron = _panel(rows, width=width, title=title)
 
         if self.window_mode:
-            self.chron_buttons = [("chron_share", _panel([(ui("chron.share"), GOLD, None)])),
+            self.chron_buttons = [] if self.mini else [("chron_share", _panel([(ui("chron.share"), GOLD, None)])),
                                   ("chron_dl", _panel([(ui("chron.download"), GOLD, None)])),
                                   ("chron_size", _panel([(ui("chron.smaller") if self.chron_mode == 2
                                                           else ui("chron.bigger"), TEXT, None)]))] if self.chron else []
@@ -1850,8 +1941,10 @@ class Painter:
             self._menu_rows.append(action)
 
         add(ui("menu.view"), GOLD, None)
+        add(f"  [{'x' if self.mini else ' '}] {ui('menu.mini')}", TEXT, ("mini",))
         for key in ("status", "realms", "chron"):
-            add(f"  [{'x' if self.view[key] else ' '}] {ui('menu.' + key)}", TEXT, ("toggle", key))
+            if not self.mini:
+                add(f"  [{'x' if self.view[key] else ' '}] {ui('menu.' + key)}", TEXT, ("toggle", key))
         if self.show_powers and st.get("powers"):
             add(ui("menu.powers"), GOLD, None)
             for k, key in enumerate(POWER_KEYS):
@@ -1867,6 +1960,7 @@ class Painter:
             add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.share')}", TEXT, ("share",))
+        add(f"  {ui('menu.timelapse')}", TEXT, ("timelapse",))
         add(f"  {ui('menu.language')}", TEXT, ("language",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
         confirming = self.confirm_new_until > time.monotonic()
@@ -2210,7 +2304,7 @@ class Painter:
 
     def _ui_key(self, now: float):
         return (id(self.hud), id(self.chron), id(self.menu_panel), id(self.menu_button), id(self._toast),
-                id(self.dialog_panel),
+                id(self.dialog_panel), id(self.ticker),
                 id(self.card["surf"]) if self.card else None,
                 round(min(1.0, self.card["until"] - now), 1) if self.card else None)
 
@@ -2248,6 +2342,10 @@ class Painter:
             ctx.set_source_surface(self.chron, 6, y)
             ctx.paint()
             self._rects["chron"] = (6, y, self.chron.get_width(), self.chron.get_height())
+        if self.ticker:                                       # modo mini: tira de noticias abajo
+            ty = fh - self.ticker.get_height() - 6
+            ctx.set_source_surface(self.ticker, 6, ty)
+            ctx.paint_with_alpha(0.92)
         if self.chron and self.chron_buttons:                 # botones de la crónica, sobre su borde derecho
             cx, cy, cw, _ = self._rects["chron"]
             x = cx + cw
@@ -2355,6 +2453,8 @@ class Painter:
         self._villagers(ctx, now, night, act)
         self._expedition_units(ctx, now)
         self._war_scene(ctx, now)
+        self._scenes(ctx, now)
+        self._wildlife(ctx, now, night)
         self._draw_dragon(ctx, now)
         self._event_markers(ctx, now)
 
@@ -2789,6 +2889,160 @@ class Painter:
             pixels(ctx, [(px, py) for px, py, u in pts if u <= 0.25], rgb("#ffe08a"), size=(2, 2))
 
 
+    # -- mini-escenas de los sucesos y vida silvestre ------------------------------
+
+    def _scenes(self, ctx, now: float):
+        """Lo que pasó hace poco se ve un rato en el mapa: fuegos artificiales por la
+        paz (y por maravillas y monumentos), refugiados que dejan un reino caído
+        rumbo a la capital viva más cercana, procesión de luto al cambiar el monarca."""
+        st = self.state
+        n = st["w"]
+        wall = time.time()
+        alive = [f for f in st["factions"] if f.get("alive")]
+        for e in st.get("chronicle", [])[-40:]:
+            k, age = e.get("k"), wall - e.get("t", 0)
+            if "x" not in e or not (0 <= e["x"] < n and 0 <= e["y"] < n) or age < 0:
+                continue
+            cx, cy = self.tile_xy(e["x"], e["y"], self.elev_at(e["x"], e["y"]))
+            cy += TH // 2
+            seed = e.get("tick", 0)
+            if k in ("peace", "power.tregua") and age < 120:
+                self._fireworks(ctx, cx, cy, now, seed, 5)
+            elif k in ("wonder.done", "monument", "found.realm") and age < 60:
+                self._fireworks(ctx, cx, cy, now, seed, 3)
+            elif k == "fall" and age < 300:
+                dest = min(alive, key=lambda f: abs(f["capital"][0] - e["x"]) + abs(f["capital"][1] - e["y"]),
+                           default=None)
+                if dest:
+                    dx, dy = self.tile_xy(*dest["capital"], self.elev_at(*dest["capital"]))
+                    self._refugees(ctx, (cx, cy), (dx, dy + TH // 2), age / 300, now)
+            elif k == "dyn.succession" and age < 180:
+                self._procession(ctx, cx, cy, now)
+
+    def _fireworks(self, ctx, x: float, y: float, now: float, seed: int, rockets: int):
+        cols = (rgb("#ff5a4a"), rgb("#f5d76e"), rgb("#7fc8ff"), rgb("#7fd06a"), rgb("#e87fb0"))
+        for r in range(rockets):
+            period = 2.0 + (h32(seed, r) % 10) / 10
+            t = ((now + r * 0.73) / period) % 1
+            ox = (h32(seed, r, 1) % 40) - 20
+            top = 38 + h32(seed, r, 2) % 24
+            col = cols[(h32(seed, r) + int((now + r * 0.73) / period)) % len(cols)]
+            if t < 0.35:                                      # sube
+                u = t / 0.35
+                pixels(ctx, [(x + ox, y - 6 - top * u)], (1, 0.95, 0.8))
+                pixels(ctx, [(x + ox, y - 4 - top * u + k) for k in range(1, 4)], (1, 0.8, 0.4), 0.4)
+            else:                                             # explota y cae
+                u = (t - 0.35) / 0.65
+                rad = 3 + 16 * (1 - (1 - u) ** 2)
+                pts = [(x + ox + math.cos(a * 0.3927) * rad, y - 6 - top + math.sin(a * 0.3927) * rad + 8 * u * u)
+                       for a in range(16)]
+                pixels(ctx, pts, col, max(0.0, 1 - u))
+                if u < 0.15:
+                    pixels(ctx, [(x + ox - 1, y - 7 - top)], (1, 1, 1), 1, size=(3, 3))
+
+    def _refugees(self, ctx, a, b, progress: float, now: float):
+        heads, bodies, packs = [], [], []
+        for k in range(10):
+            u = min(1.0, max(0.0, progress * 1.15 - k * 0.025))
+            if u <= 0 or u >= 1:
+                continue
+            x = a[0] + (b[0] - a[0]) * u + math.sin(k * 1.7) * 3
+            y = a[1] + (b[1] - a[1]) * u + math.cos(k * 2.3) * 1.5 + int(now * 4 + k) % 2 * 0.5
+            heads.append((x, y - 2))
+            bodies.append((x, y - 1))
+            if k % 2:
+                packs.append((x - 1, y - 2))
+        pixels(ctx, heads, SKIN)
+        pixels(ctx, bodies, rgb("#8a8078"), size=(1, 2))
+        pixels(ctx, packs, rgb("#6b4a2b"), size=(1, 2))
+
+    def _procession(self, ctx, x: float, y: float, now: float):
+        heads, bodies = [], []
+        for k in range(8):
+            a = now * 0.25 + k * 0.785
+            px, py = x + math.cos(a) * 12, y + math.sin(a) * 6 + 2
+            heads.append((px, py - 2))
+            bodies.append((px, py - 1))
+        pixels(ctx, heads, SKIN)
+        pixels(ctx, bodies, rgb("#26262c"), size=(1, 2))
+        a = now * 0.25
+        bx, by = x + math.cos(a) * 12, y + math.sin(a) * 6 + 2
+        pixels(ctx, [(bx + 1, by - 8)], rgb("#4a3b2a"), size=(1, 7))
+        pixels(ctx, [(bx + 2, by - 8)], rgb("#1a1a1e"), size=(3, 2))            # estandarte negro
+        ring = (now % 2.5) / 2.5                                               # campanas
+        ctx.arc(x, y - 26, 2 + ring * 10, 0, 2 * math.pi)
+        ctx.set_source_rgba(1, 0.9, 0.6, 0.6 * (1 - ring))
+        ctx.set_line_width(1)
+        ctx.stroke()
+
+    def _wildlife(self, ctx, now: float, night: float):
+        """Bandadas que cruzan la isla de día, ballenas que soplan cerca de la costa y,
+        muy de vez en cuando, una serpiente marina."""
+        st = self.state
+        n = st["w"]
+        ww, wh = self.world_size()
+
+        def sea(x, y):
+            tx, ty = self.tile_at(x, y)
+            return not (0 <= tx < n and 0 <= ty < n) or st["terrain"][ty * n + tx] == WATER
+
+        if night < 0.5:                                        # bandada en V cada ~45 s
+            cyc, t = divmod(now / 45, 1)
+            if t < 0.5:
+                u = t / 0.5
+                y0 = wh * (0.15 + (h32(int(cyc)) % 50) / 100)
+                left = h32(int(cyc), 1) % 2
+                x = -30 + (ww + 60) * (u if left else 1 - u)
+                flap = int(now * 5) % 2
+                pts = []
+                for k in range(7):
+                    side = (k + 1) // 2 * (1 if k % 2 else -1)
+                    bx = x - abs(side) * 4 * (1 if left else -1)
+                    by = y0 + side * 3
+                    pts += [(bx - 1, by - flap), (bx, by), (bx + 1, by - flap)]
+                pixels(ctx, pts, rgb("#2a2a33"))
+        cx, cy = ww / 2, wh / 2 + 10
+        rx, ry = ww / 2 - MARGIN + 14, wh / 2 - MARGIN + 4
+        cyc, t = divmod(now / 70, 1)                           # ballena
+        if t < 0.25:
+            a = (h32(int(cyc), 7) % 628) / 100
+            x, y = cx + rx * math.cos(a), cy + ry * math.sin(a)
+            if sea(x, y):
+                u = t / 0.25
+                rise = math.sin(u * math.pi)
+                ctx.save()
+                ctx.translate(x + u * 10, y)
+                ctx.scale(1, 0.4)
+                ctx.arc(0, 0, 3 + 4 * rise, math.pi, 2 * math.pi)
+                ctx.restore()
+                ctx.set_source_rgb(*rgb("#2c3e55"))
+                ctx.fill()
+                if 0.25 < u < 0.6:
+                    spout = (u - 0.25) / 0.35
+                    pixels(ctx, [(x + u * 10 + math.sin(k) * spout * 3, y - 3 - spout * (6 + k % 3))
+                                 for k in range(8)], (0.9, 0.95, 1.0), 1 - spout)
+        cyc, t = divmod(now / 300, 1)                          # serpiente marina, una de cada tres
+        if t < 0.08 and h32(int(cyc), 9) % 3 == 0:
+            u = t / 0.08
+            a0 = (h32(int(cyc), 11) % 628) / 100
+            for k in range(5):
+                a = a0 + u * 0.6 - k * 0.05
+                x, y = cx + (rx + 6) * math.cos(a), cy + (ry + 3) * math.sin(a)
+                if not sea(x, y):
+                    continue
+                hump = abs(math.sin(now * 3 + k))
+                ctx.save()
+                ctx.translate(x, y)
+                ctx.scale(1, 0.6)
+                ctx.arc(0, 0, 2 + hump * 2, math.pi, 2 * math.pi)
+                ctx.restore()
+                ctx.set_source_rgb(*rgb("#3f7a4a"))
+                ctx.fill()
+                if k == 0:
+                    pixels(ctx, [(x + 2, y - 4 - hump * 2)], rgb("#3f7a4a"), size=(2, 3))
+                    pixels(ctx, [(x + 3, y - 4 - hump * 2)], rgb("#ffe08a"))
+
+
     def _war_scene(self, ctx, now: float):
         if getattr(self, "_war_sig", 0) is None:
             self._war_sig = True
@@ -2912,6 +3166,28 @@ class Painter:
 
     def _animate_screen(self, ctx, fw, fh, now):
         w = self.state["weather"]
+        night = night_factor(self.hour())
+        winter = self.season() == "invierno"
+        if night > 0.6 and (winter or h32(int(time.time() // 86400)) % 4 == 0):   # aurora
+            for band, col in ((0, (0.4, 1.0, 0.6)), (1, (0.5, 0.6, 1.0))):
+                for x in range(0, fw, 3):
+                    y = 18 + band * 14 + 10 * math.sin(x * 0.015 + now * 0.25 + band * 2)
+                    a = 0.16 * (night - 0.5) * (1 + math.sin(x * 0.05 + now * 0.7 + band))
+                    ctx.rectangle(x, y, 3, 22)
+                    ctx.set_source_rgba(*col, a)
+                    ctx.fill()
+        if night > 0.5:                                        # estrella fugaz cada ~9 s (a veces)
+            cyc, t = divmod(now / 9, 1)
+            if t < 0.08 and h32(int(cyc), 3) % 2:
+                u = t / 0.08
+                x0, y0 = h32(int(cyc), 4) % fw, 10 + h32(int(cyc), 5) % max(1, fh // 3)
+                pts = [(x0 + (u - k * 0.03) * 70, y0 + (u - k * 0.03) * 25) for k in range(10)]
+                for k, (x, y) in enumerate(pts):
+                    pixels(ctx, [(x, y)], (1, 1, 0.9), max(0.0, (1 - k / 10) * (1 - u * 0.5)))
+        if winter and not w["storm"]:                          # nieve
+            pts = [((j * 73.1 + math.sin(now * 0.8 + j) * 8) % fw, (j * 41.7 + now * (18 + j % 7)) % fh)
+                   for j in range(int(fw * fh / 2500))]
+            pixels(ctx, pts, (1, 1, 1), 0.8)
         for k in range(3 + (4 if w["storm"] else 0) + (3 if w["fog"] else 0)):
             x = (k * 211 + now * (3 + k % 3)) % (fw + 80) - 60
             self._put(ctx, ("cloud", k), x, (k * 97) % max(1, fh - 40), 0.8 if w["storm"] else 0.5)

@@ -37,7 +37,7 @@ except (ValueError, ImportError):
 
 from .. import paths  # noqa: E402
 from ..i18n import ui, words  # noqa: E402
-from .iso import POWER_KEYS, Painter, detail_for, fit_scale, zoom_scales  # noqa: E402
+from .iso import POWER_KEYS, TW, Painter, detail_for, fit_scale, zoom_scales  # noqa: E402
 from .occlusion import OcclusionWatcher  # noqa: E402
 
 
@@ -118,6 +118,9 @@ class Wallpaper:
         self._fps = 0
         self._scale = 1.0
         self._base = 1.0
+        self._uis = 1.0                # escala de la interfaz: nunca menos de 1 (texto legible en ventanas chicas)
+        self._last_frame = time.monotonic()
+        self._normal_size = (1600, 900)
         self.zoom = 0                  # niveles de zoom sobre la escala base (solo en ventana)
         self._pointer = (0.0, 0.0)
         self._drag = None
@@ -186,9 +189,12 @@ class Wallpaper:
                 log(f"sin detección de oclusión ({e})")
                 self.occl = None
 
+        self.update_check = cfg.get("update", {}).get("check", True)
+        self.start_mini = not self.layered and (bool(getattr(args, "mini", False)) or _prefs().get("mini", False))
+        if self.start_mini:
+            self.win.set_default_size(480, 300)          # antes de mostrarla: así sí arranca chiquita
         self.win.present()
         self._resume()
-        self.update_check = cfg.get("update", {}).get("check", True)
         if not self.layered:
             GLib.idle_add(self._first_run)
             self.win.connect("close-request", lambda *_: _save_prefs(last_seen=time.time()) and False)
@@ -210,6 +216,8 @@ class Wallpaper:
             self.win.unfullscreen() if self.win.is_fullscreen() else self.win.fullscreen()
         elif name == "h":
             self.painter.toggle_view("status")
+        elif name == "m":
+            self._set_mini(not self.painter.mini)
         elif name == "c":
             self.painter.toggle_view("chron")
         elif name == "r":
@@ -236,7 +244,7 @@ class Wallpaper:
             return
         now = time.monotonic()
         p = self.painter
-        ux, uy = x / self._base, y / self._base
+        ux, uy = x / self._uis, y / self._uis
         region = p.ui_region(ux, uy)
         if p.dialog:                                # el diálogo espera respuesta: el resto no responde
             action = p.dialog_action_at(ux, uy)
@@ -291,6 +299,12 @@ class Wallpaper:
             self._do_update()
         elif action[0] == "language":
             self._switch_language(now)
+        elif action[0] == "timelapse":
+            p.toggle_menu(False)
+            self._export_timelapse()
+        elif action[0] == "mini":
+            p.toggle_menu(False)
+            self._set_mini(not p.mini)
         elif action[0] == "wallpaper":
             self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
@@ -312,6 +326,8 @@ class Wallpaper:
         self.painter.wallpaper_on = cli.wallpaper_status()
         self.painter._ui_dirty = True
         prefs = _prefs()
+        if self.start_mini:
+            self._set_mini(True)
         if not prefs.get("wallpaper_asked"):
             self.painter.show_dialog(ui("dialog.wp.title"),
                                      [(ui("dialog.wp.yes"), "wp_yes"), (ui("dialog.wp.no"), "wp_no")],
@@ -354,6 +370,36 @@ class Wallpaper:
             from .. import cli
             cli.relaunch_window()
             self.win.get_application().quit()
+
+    def _set_mini(self, on: bool):
+        """Modo mini: ventana chica, sin paneles, la cámara va sola a donde pasan cosas
+        y abajo una tira con lo último. Ideal para tenerlo en un rincón de la pantalla."""
+        p = self.painter
+        if on == p.mini:
+            return
+        if on:
+            if not (self.win.is_maximized() or self.win.is_fullscreen()):
+                self._normal_size = (self.view.get_width() or 1600, self.view.get_height() or 900)
+            self.win.unfullscreen()
+            self.win.unmaximize()
+            self._resize(480, 300)
+            self.zoom = min(2, len(zoom_scales(self._base)) - 1)
+            p.director["since"] = -1e9
+        else:
+            self._resize(*self._normal_size)
+            self.zoom = 0
+            p.pan = [0.0, 0.0]
+        p.mini = on
+        p._ui_dirty = True
+        _save_prefs(mini=on)
+        self._schedule(self._wanted_fps())
+        self._render()
+
+    def _resize(self, w: int, h: int):
+        """En Wayland una ventana ya abierta no se puede achicar desde la app (y en un
+        compositor en mosaico el tamaño lo decide él): queda como tamaño para la próxima
+        vez que se abra. Abrir en mini sí arranca chiquita."""
+        self.win.set_default_size(w, h)
 
     def _switch_language(self, now: float):
         """Castellano <-> inglés: queda en la config y el daemon escribe en ese idioma
@@ -419,6 +465,43 @@ class Wallpaper:
 
     # -- compartir ---------------------------------------------------------------
 
+    def _pictures(self) -> Path:
+        pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or str(Path.home() / "Pictures")
+        folder = Path(pics) / "Kernel Kingdom"
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    def _export_timelapse(self):
+        """GIF de cómo cambiaron las fronteras hoy (en otro hilo: tarda unos segundos)."""
+        import threading
+        from .. import timelapse
+        folder = self._pictures()
+        kingdom = (self.painter.state or {}).get("kingdom")
+        self.painter.toast(ui("timelapse.working"), time.monotonic(), secs=20)
+        self._render()
+
+        def work():
+            try:
+                path = timelapse.export(None, folder, kingdom)
+            except Exception as e:                    # no debería, pero que no muera la ventana
+                log(f"timelapse: {e}")
+                path = None
+            GLib.idle_add(done, path)
+
+        def done(path):
+            now = time.monotonic()
+            if path:
+                self.painter.toast(ui("timelapse.saved", path=str(path).replace(str(Path.home()), "~")), now, secs=8)
+                try:
+                    Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
+                except GLib.Error:
+                    pass
+            else:
+                self.painter.toast(ui("timelapse.empty"), now, ok=False, secs=8)
+            self._render()
+            return GLib.SOURCE_REMOVE
+        threading.Thread(target=work, daemon=True).start()
+
     def _share_day(self, now: float):
         """Tarjeta PNG + relato en Markdown, sin IPs ni usuarios, en Imágenes/Kernel Kingdom.
         El texto corto queda en el portapapeles, listo para pegar."""
@@ -437,9 +520,7 @@ class Wallpaper:
         title = tr("story.title", kingdom=kingdom, date=date)
         subtitle = ui("share.subtitle", date=date, parts=", ".join(parts[:4]) or tr("story.none"))
         lines = [story.scrub(t) for t in story.highlights(entries, 6)]
-        pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or str(Path.home() / "Pictures")
-        folder = Path(pics) / "Kernel Kingdom"
-        folder.mkdir(parents=True, exist_ok=True)
+        folder = self._pictures()
         png, md = folder / f"kernel-kingdom-{day}.png", folder / f"kernel-kingdom-{day}.md"
         p.share_card(title, subtitle, lines, ui("share.footer"), now).write_to_png(str(png))
         md.write_text(story.scrub(story.build(day, entries, kingdom, st.get("era_name", ""))), encoding="utf-8")
@@ -523,7 +604,7 @@ class Wallpaper:
 
     def _on_scroll(self, ctrl, dx, dy):
         x, y = self._pointer
-        panel = self.painter.ui_region(x / self._base, y / self._base)
+        panel = self.painter.ui_region(x / self._uis, y / self._uis)
         if panel in ("hud", "chron"):
             # rueda sobre un panel: recorrerlo (crónica: hacia atrás en el tiempo)
             step = 1 if dy > 0 else -1
@@ -539,7 +620,7 @@ class Wallpaper:
         self.painter.focus_tile(x, y)
         self._render()
         w, h = self.view.get_width(), self.view.get_height()
-        self.painter.inspect(w / 2 / self._scale, h / 2 / self._scale, now, ui_pos=(w / 2 / self._base, h / 2 / self._base))
+        self.painter.inspect(w / 2 / self._scale, h / 2 / self._scale, now, ui_pos=(w / 2 / self._uis, h / 2 / self._uis))
         self._render()
 
     def _focus_realm(self, fid: int, now: float):
@@ -553,7 +634,7 @@ class Wallpaper:
         self._render()                                  # recalcula cámara con el zoom nuevo
         w, h = self.view.get_width(), self.view.get_height()
         cx, cy = w / 2, h / 2
-        self.painter.inspect(cx / self._scale, cy / self._scale, now, ui_pos=(cx / self._base, cy / self._base))
+        self.painter.inspect(cx / self._scale, cy / self._scale, now, ui_pos=(cx / self._uis, cy / self._uis))
 
     def _on_drag_begin(self, gesture, x, y):
         self._drag = {"start": (x, y), "pan": list(self.painter.pan), "moved": False}
@@ -641,7 +722,11 @@ class Wallpaper:
     # -- bucle ---------------------------------------------------------------
 
     def _wanted_fps(self) -> int:
-        return self.max_fps if self.painter.wants_fast(time.monotonic()) else self.idle_fps
+        if self.painter.wants_fast(time.monotonic()):
+            return self.max_fps
+        if self.painter.wants_motion():                      # batallas, dragón, fuegos: fluido pero liviano
+            return min(self.max_fps, max(self.idle_fps, 15))
+        return self.idle_fps
 
     def _schedule(self, fps: int):
         if self._frame_src:
@@ -698,8 +783,13 @@ class Wallpaper:
         if w <= 0 or h <= 0:
             return
         now = time.monotonic()
+        dt, self._last_frame = now - self._last_frame, now
         base = fit_scale(w, h, self.painter.content_size(), self.pixel_scale)
         scales = zoom_scales(base)
+        if self.painter.mini and not self._drag:
+            target = w / (TW * 14)                        # ~14 casillas de ancho, sea cual sea el tamaño
+            self.zoom = min(range(1, len(scales)), key=lambda k: abs(scales[k] - target), default=0)
+            self.painter.director_step(now, min(dt, 0.5))
         self.zoom = min(self.zoom, len(scales) - 1)
         scale = scales[self.zoom]
         fw, fh = int(-(-w // scale)), int(-(-h // scale))
@@ -707,10 +797,11 @@ class Wallpaper:
         self.painter.set_detail(detail_for(scale) if self.zoom else 1)
         world = self.painter.frame(fw, fh, now)
         self.view.layers[0] = [_texture(world), scale / self.painter.u, world]
-        ui, changed = self.painter.ui(int(-(-w // base)), int(-(-h // base)), now)
-        if changed or self.view.layers[1][0] is None or self.view.layers[1][1] != base:
-            self.view.layers[1] = [_texture(ui), base, ui]
-        self._scale, self._base = scale, base
+        uis = max(1.0, base)
+        ui, changed = self.painter.ui(int(-(-w // uis)), int(-(-h // uis)), now)
+        if changed or self.view.layers[1][0] is None or self.view.layers[1][1] != uis:
+            self.view.layers[1] = [_texture(ui), uis, ui]
+        self._scale, self._base, self._uis = scale, base, uis
         self.view.queue_draw()
 
 

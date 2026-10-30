@@ -24,8 +24,10 @@ falta algo, el instalador te muestra el comando exacto y se ofrece a correrlo
 ```bash
 kernel-kingdom            # fondo de pantalla en todos los monitores, en segundo plano (la terminal queda libre)
 kernel-kingdom window     # abre la ventana: zoom, poderes, reinos, crónica (también desde el lanzador)
+kernel-kingdom window --mini  # ventanita con cámara automática, para un rincón de la pantalla
 kernel-kingdom stop       # detiene todo
 kernel-kingdom story      # la historia del día (.md + .txt)
+kernel-kingdom timelapse  # GIF de cómo se movieron las fronteras hoy
 kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (el idioma también en Menú > Mundo)
 kernel-kingdom update     # baja la última versión (tu mundo se conserva)
 kernel-kingdom uninstall
@@ -101,6 +103,17 @@ El fondo de pantalla es para mirar: los clics pasan al escritorio. Abrí
   Construir lleva gente y tiempo: obreros caminan desde la ciudad más cercana para
   levantar el faro o la maravilla, los druidas plantan el bosque casilla por casilla.
 - **Mientras no estabas**: si volvés a abrir la ventana después de un rato, te resume qué pasó.
+- **Modo mini** (`m` o Menú > Ver): sin paneles, la cámara viaja sola a donde pasan
+  cosas (el dragón, una batalla, un asedio, una maravilla en obra, el último suceso,
+  o una recorrida tranquila por las capitales) con una tira de noticias abajo.
+  Pensado para un rincón de otra pantalla (dejá la ventana flotante).
+- **Timelapse del día** (Menú > Mundo): el mundo guarda una foto de las fronteras
+  cada 10 minutos (~2 KB cada una) y arma un GIF con las guerras y migraciones del día.
+
+También pasan cosas chicas: fuegos artificiales por los tratados de paz y las
+maravillas, refugiados que dejan un reino caído, procesión de luto cuando muere un
+monarca, bandadas, ballenas soplando cerca de la costa (y, muy de vez en cuando,
+una serpiente marina), estrellas fugaces y auroras de noche, nieve en invierno.
 - **Todos los reinos, en pie o caídos**, en una lista con scroll; clic en uno y la
   cámara viaja a su capital.
 - **La crónica entera**: la rueda la recorre hacia atrás, `c` la expande, RePág/AvPág.

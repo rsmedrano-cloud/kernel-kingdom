@@ -13,7 +13,7 @@ import threading
 import time
 from pathlib import Path
 
-from .. import cli, config, i18n, paths, story
+from .. import cli, config, i18n, paths, story, timelapse
 from ..notify import Notifier
 from .inputs import InputActivity
 from .probes import SystemProbe
@@ -139,6 +139,7 @@ def main():
         fresh = world.chronicle.take_fresh()
         story.archive(fresh)                               # historia del día, sin límite de entradas
         notifier.push(fresh, world.kingdom, cli._running("window"))
+        timelapse.record(world)                            # foto de las fronteras cada 10 min
         today = time.strftime("%Y-%m-%d")
         if today != day:                                   # cambió el día: se escribe el relato de ayer
             story.export(day, world.kingdom, world.lore.era_name(world.era))

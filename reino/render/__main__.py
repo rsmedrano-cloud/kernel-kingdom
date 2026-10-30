@@ -86,6 +86,7 @@ def snapshot(args, cfg):
 def main():
     ap = argparse.ArgumentParser(prog="reino.render")
     ap.add_argument("--windowed", action="store_true", help="ventana normal en vez de wallpaper")
+    ap.add_argument("--mini", action="store_true", help="ventana chica con cámara automática")
     ap.add_argument("--monitor", help="monitor del wallpaper: índice (0, 1...) o conector (DP-1)")
     ap.add_argument("--state", default=str(paths.state_file()))
     ap.add_argument("--config", type=Path)
