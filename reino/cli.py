@@ -9,6 +9,7 @@
     kernel-kingdom config          # crea ~/.config/kernel-kingdom/config.toml para editar
     kernel-kingdom chronicle       # imprime la crónica
     kernel-kingdom story           # la historia del día como relato (.md y .txt)
+    kernel-kingdom update          # baja la última versión y reinicia lo que esté corriendo
     kernel-kingdom snapshot out.png
 """
 import argparse
@@ -162,6 +163,46 @@ def cmd_window(args):
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--windowed"])
     _detach("window", "reino.render", "--windowed")
     print(ui("cli.window"))
+
+
+def relaunch_window(delay: float = 1.5):
+    """Abre una ventana nueva cuando la actual ya cerró (es de instancia única)."""
+    env = dict(os.environ)
+    if IS_CHECKOUT:
+        env["PYTHONPATH"] = f"{DEV_ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
+    log = open(_logs() / "window.log", "a")
+    subprocess.Popen(["sh", "-c", f'sleep {delay}; exec "$0" -m reino.render --windowed', sys.executable],
+                     stdin=subprocess.DEVNULL, stdout=log, stderr=log, start_new_session=True,
+                     cwd=DEV_ROOT if IS_CHECKOUT else None, env=env)
+
+
+def cmd_update(args):
+    from . import __version__, update
+    print(ui("cli.update.checking", version=__version__))
+    new = update.newer()
+    if not new and not args.force:
+        print(ui("cli.update.none") if update.latest() else ui("cli.update.offline"))
+        return 0
+    print(ui("cli.update.installing", version=new or "main"))
+    ok, detail, restarted = apply_update()
+    if not ok:
+        print(ui("cli.update.failed", detail=detail))
+        return 1
+    print(ui("cli.update.done", version=new or "main", restarted=len(restarted)))
+    return 0
+
+
+def apply_update() -> tuple[bool, str, list[str]]:
+    """Instala la última versión y reinicia los servicios (también lo usa la ventana)."""
+    from . import update
+    ok, detail = update.install()
+    if not ok:
+        return False, detail, []
+    if _unit_installed("kernel-kingdom-daemon.service"):
+        _write_units()                            # por si cambió algo en los servicios
+        _systemctl("daemon-reload", check=False)
+        install_launcher()
+    return True, "", update.restart_services()
 
 
 def cmd_stop(args):
@@ -415,6 +456,8 @@ def main():
     inst.add_argument("--no-wallpaper", action="store_true", help="solo el mundo y el lanzador, sin fondo de pantalla")
     wp = sub.add_parser("wallpaper", help="prender/apagar el fondo de pantalla (on, off, status)")
     wp.add_argument("state", choices=["on", "off", "status"])
+    up = sub.add_parser("update", help="baja la última versión y reinicia lo que esté corriendo")
+    up.add_argument("--force", action="store_true", help="reinstalar aunque no haya versión nueva")
     sub.add_parser("uninstall")
     sub.add_parser("doctor")
     sub.add_parser("config", help="crea/muestra tu config de usuario")
@@ -441,7 +484,7 @@ def main():
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--snapshot", args.png, *args.extra])
     if args.cmd == "story":
         return cmd_story(args)
-    return {"window": cmd_window, "stop": cmd_stop, "wallpaper": cmd_wallpaper, "install": cmd_install, "uninstall": cmd_uninstall,
+    return {"window": cmd_window, "stop": cmd_stop, "update": cmd_update, "wallpaper": cmd_wallpaper, "install": cmd_install, "uninstall": cmd_uninstall,
             "doctor": cmd_doctor, "config": cmd_config}[args.cmd](args)
 
 

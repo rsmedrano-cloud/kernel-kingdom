@@ -139,6 +139,10 @@ faro = { gold = 60, stone = 30 }
 fiesta = { gold = 40 }
 discordia = { mana = 30 }
 exodo = { mana = 25 }
+maravilla = { gold = 800, stone = 120 }   # cada maravilla cuesta 1.6 veces la anterior
+dragon = { mana = 120, gold = 200 }
+murallas = { defense = 300, stone = 60 }
+tregua = { gold = 300 }
 
 # ---------------------------------------------------------------------------
 [render]
@@ -151,3 +155,11 @@ interactive = false   # el fondo de pantalla es para mirar (los clics pasan al e
 show_chronicle = true
 show_powers = true    # barra de poderes del Soberano
 hemisphere = "auto"   # estaciones: "norte", "sur" o "auto" (según la zona horaria)
+
+# ---------------------------------------------------------------------------
+[notify]
+enabled = true        # notificaciones del escritorio para guerras, saqueos, maravillas...
+min_minutes = 10      # como mucho una cada tantos minutos (y ninguna con la ventana abierta)
+
+[update]
+check = true          # la ventana consulta GitHub (cada 6 h como mucho) si hay versión nueva

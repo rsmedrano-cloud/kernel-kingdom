@@ -27,14 +27,23 @@ kernel-kingdom window     # abre la ventana: zoom, poderes, reinos, crónica (ta
 kernel-kingdom stop       # detiene todo
 kernel-kingdom story      # la historia del día (.md + .txt)
 kernel-kingdom config     # tu config: ~/.config/kernel-kingdom/config.toml (language: auto, es, en)
+kernel-kingdom update     # baja la última versión (tu mundo se conserva)
 kernel-kingdom uninstall
 ```
 
 Después de instalar aparece **Kernel Kingdom** en el menú de aplicaciones. El mundo
 corre como servicio en segundo plano: cerrar la ventana (o la terminal) nunca lo
 detiene. En la ventana todo está en el botón **Menú** (arriba a la derecha): qué
-paneles ver, los poderes del Soberano y las acciones del mundo; la crónica tiene su
-propio botón **Descargar día**.
+paneles ver, los poderes del Soberano y las acciones del mundo; la crónica tiene sus
+botones **Compartir** y **Descargar día**. Cuando sale una versión nueva, la ventana
+te avisa y se actualiza sola desde **Menú > Mundo > Actualizar**. Los sucesos grandes
+(guerras, saqueos, maravillas) también llegan como **notificaciones del escritorio**;
+tocá una y la cámara viaja ahí (`[notify]` en la config).
+
+**Compartí tu reino:** *Compartir* guarda una tarjeta con la isla y los titulares
+del día, más el relato en Markdown, en `~/Imágenes/Kernel Kingdom` (sin IPs ni
+nombres de usuario), y copia un texto corto al portapapeles. ¡Subí tus crónicas a
+[Discussions › Show and tell](https://github.com/rsmedrano-cloud/kernel-kingdom/discussions/categories/show-and-tell)!
 
 ## Qué alimenta al mundo
 
@@ -82,11 +91,16 @@ aldeanos tienen oficio y caminan por las calles al trabajo, al estilo WorldBox.
 El fondo de pantalla es para mirar: los clics pasan al escritorio. Abrí
 `kernel-kingdom window` para actuar:
 
-- **Poderes del Soberano** (barra de poderes o teclas 1–7): **Rayo**, **Lluvia**,
-  **Bendición**, **Héroe**, **Bosque**, **Faro**, **Fiesta**, pagados con lo que
-  produce el reino (oro, piedra, maná, defensa; costos en `[powers]` de la config).
+- **Poderes del Soberano** (Menú, o teclas 1–9): **Rayo**, **Lluvia**, **Bendición**,
+  **Héroe**, **Bosque**, **Faro**, **Fiesta**, **Discordia**, **Éxodo**, y los caros:
+  **Maravillas** (Coloso, Coliseo, Observatorio, Jardines Colgantes, cada una con su
+  efecto y cada una más cara que la anterior), un **Dragón** que incendia una zona,
+  **Murallas** para que una capital aguante casi todos los asedios y **Tregua** para
+  terminar una guerra. Se pagan con lo que produce el reino (oro, piedra, maná,
+  defensa; costos en `[powers]` de la config); un tesoro muy gordo atrae piratas.
   Construir lleva gente y tiempo: obreros caminan desde la ciudad más cercana para
-  levantar el faro, los druidas plantan el bosque casilla por casilla.
+  levantar el faro o la maravilla, los druidas plantan el bosque casilla por casilla.
+- **Mientras no estabas**: si volvés a abrir la ventana después de un rato, te resume qué pasó.
 - **Todos los reinos, en pie o caídos**, en una lista con scroll; clic en uno y la
   cámara viaja a su capital.
 - **La crónica entera**: la rueda la recorre hacia atrás, `c` la expande, RePág/AvPág.

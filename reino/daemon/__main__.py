@@ -13,7 +13,8 @@ import threading
 import time
 from pathlib import Path
 
-from .. import config, i18n, paths, story
+from .. import cli, config, i18n, paths, story
+from ..notify import Notifier
 from .inputs import InputActivity
 from .probes import SystemProbe
 from .world import World
@@ -119,8 +120,10 @@ def main():
     added = story.backfill(world.chronicle.entries)          # lo de hoy que pasó antes de este arranque
     if added:
         print(f"kernel-kingdom daemon: {added} entradas de hoy recuperadas para la historia del día", file=sys.stderr)
+    notifier = Notifier(cfg)
     while not stop.is_set():
         t0 = time.monotonic()
+        notifier.pump()
         snap = probe.sample()
         snap["input"] = inputs.take(snap["dt"] or interval)
         commands = take_commands()
@@ -128,7 +131,9 @@ def main():
             world = new_world(world, cfg)
             commands = []
         events = world.step(snap, commands)
-        story.archive(world.chronicle.take_fresh())        # historia del día, sin límite de entradas
+        fresh = world.chronicle.take_fresh()
+        story.archive(fresh)                               # historia del día, sin límite de entradas
+        notifier.push(fresh, world.kingdom, cli._running("window"))
         today = time.strftime("%Y-%m-%d")
         if today != day:                                   # cambió el día: se escribe el relato de ayer
             story.export(day, world.kingdom, world.lore.era_name(world.era))

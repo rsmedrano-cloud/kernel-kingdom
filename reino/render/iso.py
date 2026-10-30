@@ -27,7 +27,8 @@ WATER, SAND, GRASS, FOREST, HILL, MOUNTAIN = range(6)
 ELEV = {WATER: -2, SAND: 0, GRASS: 0, FOREST: 0, HILL: 3, MOUNTAIN: 7}
 BASE = 3                             # grosor de la losa bajo cada casilla
 MARGIN = 24                          # aire alrededor de la isla en la superficie del mundo
-POWER_KEYS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo")
+POWER_KEYS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo",
+              "maravilla", "dragon", "murallas", "tregua")
 
 
 def rgb(hexstr: str) -> tuple[float, float, float]:
@@ -821,6 +822,80 @@ class Sprites:
         pixels(ctx, [(ox + rng.randrange(3, 13), b - rng.randrange(2, 6)) for _ in range(4)], EMBER)
         return self._anchor(s)
 
+    def _make_wonder(self, kind: str):
+        """Maravillas: más grandes que cualquier edificio, en mármol y oro."""
+        s, ctx = _surface(24, 56)
+        ox, b = 4, 52                                     # rombo de 16 centrado, base en y=b
+        if kind == "coloso":                              # estatua gigante sobre pedestal, antorcha en alto
+            prism(ctx, ox, b - 10, 16, 4, STONE)
+            prism(ctx, ox + 4, b - 16, 8, 4, shade(STONE, 0.9))
+            bronze, dark = rgb("#c9a24a"), rgb("#9a7a32")
+            pixels(ctx, [(ox + 5, b - 22), (ox + 9, b - 22)], dark, size=(2, 8))          # piernas
+            pixels(ctx, [(ox + 4, b - 34)], bronze, size=(8, 12))                          # túnica
+            pixels(ctx, [(ox + 8, b - 34)], dark, size=(4, 12))                            # lado en sombra
+            pixels(ctx, [(ox + 4, b - 24)], dark, size=(8, 1))                             # pliegue
+            pixels(ctx, [(ox + 6, b - 39)], bronze, size=(4, 5))                           # cabeza
+            pixels(ctx, [(ox + 5, b - 41), (ox + 7, b - 42), (ox + 9, b - 41)], GOLD, size=(1, 2))  # corona
+            pixels(ctx, [(ox + 12, b - 46)], bronze, size=(2, 14))                         # brazo en alto
+            pixels(ctx, [(ox + 11, b - 50)], rgb("#ffcf6a"), size=(4, 4))                  # antorcha
+            pixels(ctx, [(ox + 12, b - 52)], rgb("#fff2a8"), size=(2, 2))
+            pixels(ctx, [(ox + 2, b - 32)], dark, size=(2, 9))                             # brazo con escudo
+            pixels(ctx, [(ox + 1, b - 27)], bronze, size=(3, 4))
+        elif kind == "coliseo":                           # anillo de arcos en dos pisos
+            sand = rgb("#d9c49a")
+            prism(ctx, ox - 2, b - 14, 20, 8, sand, shade(sand, 0.85), shade(sand, 0.7))
+            prism(ctx, ox, b - 18, 16, 4, shade(sand, 1.05), shade(sand, 0.85), shade(sand, 0.7))
+            diamond(ctx, ox + 3, b - 17, 10, rgb("#c8a86a"))                                       # arena
+            arches = [(ox - 1 + 3 * k, b - 7 + (k * 3) // 4) for k in range(4)] + \
+                     [(ox + 11 + 3 * k, b - 4 - (k * 3) // 4) for k in range(3)]
+            pixels(ctx, arches, rgb("#6b5a40"), size=(1, 3))
+            pixels(ctx, [(x, y - 5) for x, y in arches], rgb("#7a6a50"), size=(1, 2))
+            pixels(ctx, [(ox + 2, b - 22), (ox + 13, b - 22)], rgb("#c0392b"), size=(2, 2))       # estandartes
+            pixels(ctx, [(ox + 2, b - 20), (ox + 14, b - 20)], DARK_WOOD, size=(1, 3))
+        elif kind == "observatorio":                      # torre con cúpula y telescopio
+            prism(ctx, ox, b - 10, 16, 4, STONE)
+            prism(ctx, ox + 3, b - 32, 10, 22, shade(MARBLE, 0.95))
+            for k in range(3):
+                pixels(ctx, [(ox + 5, b - 26 + 7 * k), (ox + 10, b - 24 + 7 * k)], WINDOW, size=(1, 2))
+            dome = rgb("#3f5f8f")
+            for r in range(5):
+                pixels(ctx, [(ox + 8 - r - 1, b - 33 - (4 - r))], dome, size=(2 * r + 2, 1))
+            pixels(ctx, [(ox + 9 + k, b - 39 - k) for k in range(5)], rgb("#c9a24a"), size=(2, 1))  # telescopio
+            pixels(ctx, [(ox + 7, b - 39)], GOLD)
+        else:                                             # jardines colgantes: terrazas verdes escalonadas
+            green, stone = rgb("#4f9a3e"), rgb("#c8b48a")
+            for k in range(4):
+                w = 16 - 4 * k
+                prism(ctx, ox + 2 * k, b - 12 - 7 * k, w, 5, green, shade(stone, 0.9), shade(stone, 0.75))
+                vines = [(ox + 2 * k + j, b - 12 - 7 * k + w // 4 + 2 + (j % 3)) for j in range(1, w - 1, 2)]
+                pixels(ctx, vines, rgb("#2f6b34"), size=(1, 2))
+            flowers = [(ox + 3, b - 13), (ox + 9, b - 15), (ox + 13, b - 12), (ox + 6, b - 21), (ox + 10, b - 22),
+                       (ox + 8, b - 29)]
+            pixels(ctx, flowers, rgb("#e87fb0"))
+            pixels(ctx, [(x + 1, y + 1) for x, y in flowers[::2]], rgb("#f5d76e"))
+            pixels(ctx, [(ox + 7, b - 37)], rgb("#9fd0ff"), size=(2, 2))                           # fuente arriba
+        return s, -12, -b + 4
+
+    def _make_citywall(self, front: int):
+        """Murallas alrededor del palacio: anillo de almenas; se dibuja en dos mitades
+        (la de atrás antes del palacio, la de adelante después)."""
+        s, ctx = _surface(28, 24)
+        cx, cy = 14, 14                                   # centro de la casilla
+        pts = []
+        for k in range(40):
+            a = k / 40 * 2 * math.pi
+            x, y = cx + math.cos(a) * 12, cy + math.sin(a) * 6
+            if (math.sin(a) > 0) == bool(front):
+                pts.append((x, y))
+        stone = rgb("#b0a898")
+        pixels(ctx, [(x - 1, y - 4) for x, y in pts], shade(stone, 0.75), size=(2, 5))
+        pixels(ctx, [(x - 1, y - 5) for k, (x, y) in enumerate(pts) if k % 2], stone, size=(2, 1))
+        towers = [(cx - 12, cy), (cx + 11, cy)] + ([(cx, cy + 6)] if front else [(cx, cy - 7)])
+        for x, y in towers:
+            prism(ctx, x - 2, y - 9, 4, 6, stone)
+        return s, -14, -14
+
+
     def _make_rubble(self, variant: int):
         s, ctx = _surface(12, 6)
         rng = random.Random(variant)
@@ -869,11 +944,13 @@ _MARKERS = {
     "exp.army.march": (_RED, "swords"), "exp.explore.start": (_GREEN, "flag"), "exp.explore.find": (_GREEN, "star"),
     "exp.build.start": (_GOLD, "flag"), "exp.build.done": (_GOLD, "star"), "exp.plant.start": (_GREEN, "flag"),
     "dyn.reborn": (_GOLD, "flag"), "fall": (_RED, "flag"), "found.realm": (_GOLD, "flag"), "monument": (_GOLD, "star"),
-    "power.rayo": (_BLUE, "star"),
+    "power.rayo": (_BLUE, "star"), "power.dragon": (_RED, "swords"), "pirates": (_RED, "swords"),
+    "walls.breach": (_RED, "swords"), "walls.held": (_BLUE, "star"), "power.maravilla": (_GOLD, "flag"),
+    "wonder.done": (_GOLD, "star"), "power.tregua": (_GREEN, "flag"), "wonder.coloso.held": (_BLUE, "star"),
 }
 # Avisos en la ventana cuando pasa algo de esto
 _TOASTS = {"war.declare", "war.start", "capital.sacked", "exp.siege.breach", "fall", "dyn.reborn", "exp.build.done",
-           "peace"}
+           "peace", "wonder.done", "pirates", "walls.breach", "dragon.leave"}
 
 # Por dónde caminan los aldeanos
 _WALKABLE = {B.STREET, B.PLAZA, B.WELL, B.MONUMENT, B.FARM, B.PASTURE, B.GARDEN, B.DOCK}
@@ -998,6 +1075,7 @@ class Painter:
         self._menu_rows: list = []
         self.confirm_new_until = 0.0
         self.wallpaper_on = False
+        self.update_available: str | None = None
         self.dialog: dict | None = None    # ventana de diálogo (p.ej. la pregunta de bienvenida)
         self.dialog_panel = None
         self._dialog_rows: list = []
@@ -1305,7 +1383,11 @@ class Painter:
                         elif mark == "herreria":
                             self.smoke.append((cx + 3, cy - 18, 1.0))
                     else:
+                        if cap.get("walled") == [x, y]:
+                            blit(("citywall", 0), cx, cy)            # mitad de atrás
                         blit(("palace", style, col, material), cx, cy)
+                        if cap.get("walled") == [x, y]:
+                            blit(("citywall", 1), cx, cy)            # mitad de adelante
                         self.flags.append((cx - 4, cy - 22, col))
                     place(o, "palace", i)
                     continue
@@ -1599,6 +1681,16 @@ class Painter:
             else:
                 blit(("lighthouse",), cx, cy)
                 self.beacons.append((cx, cy - 27))
+        elif kind == "wonder":
+            if s.get("building"):
+                blit(("scaffold",), cx, cy)
+                blit(("scaffold",), cx - 4, cy + 2)
+            else:
+                blit(("wonder", s.get("wonder", "coloso")), cx, cy)
+                if s.get("wonder") == "observatorio":
+                    self.beacons.append((cx, cy - 30))
+                elif s.get("wonder") == "jardines":
+                    self.fountains.append((cx, cy - 14))
         elif kind == "embassy":
             if s.get("alive"):
                 col = tuple(c / 255 for c in s.get("color", (200, 200, 200)))
@@ -1720,7 +1812,8 @@ class Painter:
             self.chron = _panel(rows, width=width, title=title)
 
         if self.window_mode:
-            self.chron_buttons = [("chron_dl", _panel([(ui("chron.download"), GOLD, None)])),
+            self.chron_buttons = [("chron_share", _panel([(ui("chron.share"), GOLD, None)])),
+                                  ("chron_dl", _panel([(ui("chron.download"), GOLD, None)])),
                                   ("chron_size", _panel([(ui("chron.smaller") if self.chron_mode == 2
                                                           else ui("chron.bigger"), TEXT, None)]))] if self.chron else []
             self.menu_button = _panel([(("▲ " if self.menu_open else "▼ ") + ui("menu.button"), GOLD, None)])
@@ -1729,6 +1822,13 @@ class Painter:
         self.dialog_panel = None
         if self.dialog:
             rows, self._dialog_rows = [], []
+            for text in self.dialog.get("lines", []):        # cuerpo (envuelto a ~70 columnas)
+                for line in _wrap(_MEASURE, text, 420):
+                    rows.append((line, TEXT, None))
+                    self._dialog_rows.append(None)
+            if self.dialog.get("lines"):
+                rows.append(("", DIM, None))
+                self._dialog_rows.append(None)
             for label, action in self.dialog["options"]:
                 rows.append((f"> {label}", TEXT, None))
                 self._dialog_rows.append(action)
@@ -1758,9 +1858,12 @@ class Painter:
                 afford = all(r.get(c, 0) >= v for c, v in cost.items())
                 price = ", ".join(f"{v} {res[c]}" for c, v in cost.items())
                 col = GOLD if key == self.selected_power else (TEXT if afford else (0.42, 0.43, 0.46))
-                add(f"  {k + 1} {names[key][0]:<10} {price}", col, ("power", key))
+                add(f"  {k + 1 if k < 9 else ' '} {names[key][0]:<10} {price}", col, ("power", key))
         add(ui("menu.world"), GOLD, None)
+        if self.update_available:
+            add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
+        add(f"  {ui('menu.share')}", TEXT, ("share",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
         confirming = self.confirm_new_until > time.monotonic()
         add(f"  {ui('menu.new_confirm') if confirming else ui('menu.new')}",
@@ -1769,8 +1872,8 @@ class Painter:
         add(ui("menu.help"), DIM, None)
         return _panel(rows)
 
-    def show_dialog(self, title: str, options: list[tuple[str, str]], note: str = ""):
-        self.dialog = {"title": title, "options": options, "note": note}
+    def show_dialog(self, title: str, options: list[tuple[str, str]], note: str = "", lines: list[str] = ()):
+        self.dialog = {"title": title, "options": options, "note": note, "lines": list(lines)}
         self._ui_dirty = True
 
     def close_dialog(self):
@@ -1852,6 +1955,72 @@ class Painter:
         self.selected_power = key
         self._ui_dirty = True
 
+    def share_card(self, title: str, subtitle: str, lines: list[str], footer: str, now: float) -> cairo.ImageSurface:
+        """Tarjeta 1200x675 para compartir: la isla entera a la izquierda y lo que
+        pasó a la derecha."""
+        W, H = 1200, 675
+        card = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
+        ctx = cairo.Context(card)
+        ctx.set_source_rgb(*rgb("#14161c"))
+        ctx.paint()
+        saved_pan, saved_u = list(self.pan), self.u
+        self.set_detail(1)
+        self.pan = [0, 0]
+        ww, wh = self.world_size()
+        world = self.frame(ww, wh, now)                  # la isla completa, con su animación del momento
+        self.pan = saved_pan
+        self.set_detail(saved_u)
+        box_w, box_h = 700, 635
+        k = max(1, min(box_w // ww, box_h // wh)) if ww <= box_w and wh <= box_h else min(box_w / ww, box_h / wh)
+        ctx.save()
+        ctx.translate(20 + (box_w - ww * k) / 2, 20 + (box_h - wh * k) / 2)
+        ctx.scale(k, k)
+        ctx.set_source_surface(world, 0, 0)
+        ctx.get_source().set_filter(cairo.FILTER_NEAREST)
+        ctx.paint()
+        ctx.restore()
+        x0, width = 740, W - 740 - 32
+        ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+        ctx.set_font_size(26)
+        y = 64
+        for line in _wrap(ctx, title, width):
+            ctx.set_source_rgb(*GOLD)
+            ctx.move_to(x0, y)
+            ctx.show_text(line)
+            y += 32
+        ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        ctx.set_font_size(15)
+        y += 6
+        for line in _wrap(ctx, subtitle, width):
+            ctx.set_source_rgb(*DIM)
+            ctx.move_to(x0, y)
+            ctx.show_text(line)
+            y += 20
+        y += 14
+        ctx.set_font_size(16)
+        for text in lines:
+            wrapped = _wrap(ctx, text, width - 18)
+            if y + 22 * len(wrapped) > H - 60:
+                break
+            ctx.set_source_rgb(*rgb("#ff9a8a"))
+            ctx.move_to(x0, y)
+            ctx.show_text("•")
+            for line in wrapped:
+                ctx.set_source_rgb(*TEXT)
+                ctx.move_to(x0 + 18, y)
+                ctx.show_text(line)
+                y += 22
+            y += 8
+        ctx.set_font_size(13)
+        ctx.set_source_rgb(*DIM)
+        foot = _wrap(ctx, footer, width)
+        for k, line in enumerate(foot):
+            ctx.move_to(x0, H - 28 - 18 * (len(foot) - 1 - k))
+            ctx.show_text(line)
+        card.flush()
+        return card
+
+
     def toast(self, text: str, now: float, ok: bool = True, secs: float = 4.0):
         col = TEXT if ok else rgb("#ff9a8a")
         self._toast = (_panel([(line, col, None) for line in _wrap(_MEASURE, text, 420)]), now + secs)
@@ -1912,7 +2081,13 @@ class Painter:
         if hit:
             s = hit
             title = s.get("title", s["name"])
-            lines.append((f"{words('kinds').get(s['kind'], s['kind'])}: {s['name']}", TEXT, None))
+            if s["kind"] == "wonder":
+                effect = words("wonder_effects").get(s.get("wonder"), "")
+                lines.append((effect[:1].upper() + effect[1:], GOLD, None))
+                if s.get("building"):
+                    lines.append((ui("card.building"), DIM, None))
+            else:
+                lines.append((f"{words('kinds').get(s['kind'], s['kind'])}: {s['name']}", TEXT, None))
             if s["kind"] == "tower":
                 lines.append((ui("card.floors", floors=s.get("floors", 1), editors=", ".join(s.get("editors", [])) or "-"), DIM, None))
                 if s.get("forging"):
@@ -1921,7 +2096,7 @@ class Painter:
                 lines.append((ui("card.mine", pct=f"{s.get('activity', 0):.0%}", disk=st.get("activity", {}).get("disk", 0)), DIM, None))
             elif s["kind"] == "embassy":
                 lines.append((ui("card.embassy", user=s.get("user", "?"), mins=s.get("uptime", 0) / 60), DIM, None))
-            elif s["kind"] != "lighthouse":
+            elif s["kind"] not in ("lighthouse", "wonder"):
                 lines.append((ui("card.uptime", state=ui("card.alive") if s.get("alive") else ui("card.ruins"),
                                  hours=s.get("uptime", 0) / 3600, rss=s.get("rss_mb", 0)), DIM, None))
                 lines.append((ui("card.walls", walls=s.get("walls", 0)), DIM, None))
@@ -2176,6 +2351,7 @@ class Painter:
         self._villagers(ctx, now, night, act)
         self._expedition_units(ctx, now)
         self._war_scene(ctx, now)
+        self._draw_dragon(ctx, now)
         self._event_markers(ctx, now)
 
         # Fiesta (confeti sobre la capital) y bendición (chispas doradas) por poderes del Soberano
@@ -2537,6 +2713,77 @@ class Painter:
             for k, dx in enumerate((-24, 24)):
                 engines.append((tx + dx, ty + 12, e["fid"], [(tx, ty)], k * 3))
         self.war_melee, self.war_engines, self.war_camps = melee, engines, camps
+
+    def _draw_dragon(self, ctx, now: float):
+        """El dragón: llega desde el mar, da vueltas sobre el lugar y escupe fuego
+        hacia la última casilla que incendió. Sombra en el suelo."""
+        d = self.state.get("dragon")
+        if not d:
+            return
+        n = self.state["w"]
+        tick_f = self.state["tick"] + (now - getattr(self, "_state_t", now)) / max(0.5, self.interval)
+        t = tick_f - d["start"]
+        tx, ty = self.tile_xy(d["x"], d["y"], self.elev_at(d["x"], d["y"]))
+        ty += TH // 2
+        ww, wh = self.world_size()
+        ang = now * 0.9
+        orbit = (tx + math.cos(ang) * 26, ty + math.sin(ang) * 13 - 34)
+        if t < 6:                                          # llegando desde el borde del mapa
+            u = t / 6
+            sx, sy = -20, wh * 0.2
+            x, y = sx + (orbit[0] - sx) * u, sy + (orbit[1] - sy) * u
+        elif t > d["until"] - d["start"] - 4:              # yéndose
+            u = (t - (d["until"] - d["start"] - 4)) / 4
+            x, y = orbit[0] + (ww + 40 - orbit[0]) * u, orbit[1] - 30 * u
+        else:
+            x, y = orbit
+        vx = -math.sin(ang) if 6 <= t else 1
+        facing = 1 if vx >= 0 else -1
+        flap = math.sin(now * 9)
+        body, belly, wing = rgb("#7a1f1f"), rgb("#c8743a"), rgb("#a3302a")
+        # sombra
+        ctx.save()
+        ctx.translate(x, y + 36)                            # sombra en el suelo
+        ctx.scale(1, 0.4)
+        ctx.arc(0, 0, 9, 0, 2 * math.pi)
+        ctx.restore()
+        ctx.set_source_rgba(0, 0, 0, 0.18)
+        ctx.fill()
+        # alas (triángulos que suben y bajan)
+        for side in (-1, 1):
+            tip_y = y - 10 * flap
+            ctx.move_to(x - 2, y - 1)
+            ctx.line_to(x + side * 4 - facing * 6, tip_y - 2)
+            ctx.line_to(x + side * 2 - facing * 12, tip_y + 3)
+            ctx.line_to(x + 3, y + 1)
+            ctx.close_path()
+            ctx.set_source_rgb(*shade(wing, 0.85 if side < 0 else 1.0))
+            ctx.fill()
+        # cuerpo, cola, cuello y cabeza
+        pixels(ctx, [(x - 5, y - 1)], body, size=(10, 3))
+        pixels(ctx, [(x - 4, y + 1)], belly, size=(8, 1))
+        tail = [(x - facing * (6 + k), y - 1 + math.sin(now * 4 + k * 0.6) * 1.5) for k in range(8)]
+        pixels(ctx, tail, body, size=(2, 2))
+        pixels(ctx, [(x + facing * 6, y - 3)], body, size=(2, 3))
+        hx, hy = x + facing * 8, y - 4
+        pixels(ctx, [(hx - (2 if facing < 0 else 0), hy)], body, size=(4, 2))
+        pixels(ctx, [(hx + facing * 1, hy)], rgb("#ffe08a"))                # ojo
+        pixels(ctx, [(hx - facing * 1, hy - 2), (hx, hy - 2)], rgb("#e8d8b0"))   # cuernos
+        # fuego hacia la última casilla que quemó
+        last = d.get("last")
+        if last and 6 <= t and int(now * 1.5) % 3 != 0:
+            fx, fy = self.tile_xy(last[0], last[1], self.elev_at(last[0], last[1]))
+            fy += TH // 2 - 3
+            mx, my = hx + facing * 3, hy + 1
+            pts = []
+            for k in range(18):
+                u = ((now * 3 + k / 18) % 1)
+                pts.append((mx + (fx - mx) * u + math.sin(k * 2.1 + now * 7) * 2 * u,
+                            my + (fy - my) * u + math.cos(k * 1.7 + now * 6) * 2 * u, u))
+            pixels(ctx, [(px, py) for px, py, u in pts if u > 0.6], rgb("#c42a18"), size=(3, 3))
+            pixels(ctx, [(px, py) for px, py, u in pts if 0.25 < u <= 0.6], EMBER, size=(2, 2))
+            pixels(ctx, [(px, py) for px, py, u in pts if u <= 0.25], rgb("#ffe08a"), size=(2, 2))
+
 
     def _war_scene(self, ctx, now: float):
         if getattr(self, "_war_sig", 0) is None:

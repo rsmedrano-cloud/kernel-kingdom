@@ -285,6 +285,64 @@ class WorldTest(unittest.TestCase):
         self.assertTrue(any(s["kind"] == "lighthouse" for s in self.world.structures.values()))
         self.assertIn("poder", self.kinds())
 
+    def test_wonder_is_built_and_each_costs_more(self):
+        s = snap(browsers={"chrome": proc(3000)})
+        self.run_ticks(60, s)
+        w = self.world
+        f = w.factions["chrome"]
+        cap = w.idx(*f["capital"])
+        i = next(j for j, o in enumerate(w.owner) if o == f["id"] and j != cap and not w.burn[j])
+        first = w.power_costs()["maravilla"]["gold"]
+        w.resources.update(gold=10000, stone=1000)
+        w.step(s, [{"power": "maravilla", "x": i % w.n, "y": i // w.n}])
+        self.assertTrue(w.power_log[-1]["ok"], w.power_log[-1])
+        wonder = next(x for x in w.structures.values() if x["kind"] == "wonder")
+        self.assertTrue(wonder["building"])
+        self.assertAlmostEqual(w.resources["gold"], 10000 - first, delta=5)
+        self.assertGreater(w.power_costs()["maravilla"]["gold"], first)
+        self.run_ticks(200, s)
+        self.assertFalse(wonder["building"])                            # los obreros la terminaron
+        self.assertTrue(wonder["alive"])
+
+    def test_dragon_burns_and_leaves(self):
+        s = snap(browsers={"chrome": proc(3000)})
+        self.run_ticks(60, s)
+        w = self.world
+        x, y = w.factions["chrome"]["capital"]
+        w.resources.update(mana=500, gold=500)
+        w.step(s, [{"power": "dragon", "x": x, "y": y}])
+        self.assertTrue(w.power_log[-1]["ok"])
+        self.assertIsNotNone(w.dragon)
+        w.step(s, [{"power": "dragon", "x": x, "y": y}])
+        self.assertFalse(w.power_log[-1]["ok"])                         # un dragón por vez
+        burned = 0
+        for _ in range(50):
+            w.step(s)
+            burned = max(burned, sum(1 for b in w.burn if b))
+        self.assertGreater(burned, 3)
+        self.assertIsNone(w.dragon)
+
+    def test_walls_and_truce(self):
+        s = snap(browsers={"chrome": proc(3000), "firefox": proc(2500)})
+        self.run_ticks(60, s)
+        w = self.world
+        a, b = w.factions["chrome"], w.factions["firefox"]
+        w.resources.update(defense=1000, stone=500, gold=1000)
+        w.step(s, [{"power": "murallas", "x": a["capital"][0], "y": a["capital"][1]}])
+        self.assertEqual(a["walled"], list(a["capital"]))
+        w._declare_war(a, b)
+        self.assertTrue(w.wars)
+        w.step(s, [{"power": "tregua", "x": b["capital"][0], "y": b["capital"][1]}])
+        self.assertTrue(w.power_log[-1]["ok"])
+        self.assertFalse(w.wars)
+        self.assertFalse([e for e in w.expeditions if e["kind"] == "army"])
+
+    def test_defense_is_capped_by_the_armories(self):
+        s = snap(browsers={"chrome": proc(2000)}, fortresses={"daemon:sshd": fortress("daemon", "sshd", 5000)})
+        self.world.resources["defense"] = 50000
+        self.world.step(s)
+        self.assertLess(self.world.resources["defense"], 2000)
+
     def test_lighthouse_is_built_by_workers_over_time(self):
         s = snap(browsers={"chrome": proc(2000)})
         self.run_ticks(30, s)

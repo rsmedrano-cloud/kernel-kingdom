@@ -6,7 +6,10 @@ resumen de lo que pasó, partes del día, personajes y cierre. Sale en Markdown
 y en texto plano (pensado para pasarlo por un lector de voz).
 """
 import datetime as dt
+import getpass
 import json
+import re
+import socket
 import time
 from collections import Counter
 from pathlib import Path
@@ -20,14 +23,17 @@ _COUNT = {
     "found": ("found.realm", "found.app"), "fall": ("fall",), "dyn": ("dyn.succession", "dyn.reborn"),
     "hero": ("hero.born", "power.heroe"), "dead": ("hero.died", "hero.fell", "hero.exile"),
     "storm": ("storm.start",), "capital": ("capital.moved",), "visit": ("visit.arrive", "visit.local"),
-    "power": ("power.rayo", "power.lluvia", "power.bendicion", "power.bosque", "power.faro", "power.fiesta"),
+    "power": ("power.rayo", "power.lluvia", "power.bendicion", "power.bosque", "power.faro", "power.fiesta",
+              "power.discordia", "power.exodo", "power.maravilla", "power.dragon", "power.murallas", "power.tregua"),
+    "wonder": ("wonder.done",), "pirates": ("pirates",), "sack": ("capital.sacked",),
 }
 
 
 # Los hechos grandes del día (para un relato corto o para leer en voz alta)
 _HIGHLIGHTS = {"war.declare", "war.start", "peace", "capital.sacked", "capital.moved", "fall", "dyn.succession",
                "dyn.reborn", "found.realm", "storm.start", "eruption.start", "monument", "exp.build.done",
-               "visit.arrive", "era.new", "era.kernel", "exp.siege.held", "exp.siege.breach"}
+               "visit.arrive", "era.new", "era.kernel", "exp.siege.held", "exp.siege.breach", "wonder.done",
+               "pirates", "power.dragon", "dragon.leave", "walls.breach", "walls.held", "power.tregua"}
 
 
 def archive_file(day: str) -> Path:
@@ -77,14 +83,53 @@ def load(day: str) -> list[dict]:
     return out
 
 
+def count_parts(entries: list[dict]) -> list[str]:
+    """['2 guerras', '14 batallas', ...] de un montón de entradas."""
+    keys = Counter(e.get("k", "") for e in entries)
+    counts = raw("story.count")
+    return [counts[name][0 if n == 1 else 1].format(n=n) for name, ks in _COUNT.items()
+            if name in counts and (n := sum(keys[k] for k in ks))]
+
+
+def highlights(entries: list[dict], n: int = 6) -> list[str]:
+    """Los hechos grandes; si no hubo, lo último que pasó."""
+    big = [e["text"] for e in entries if e.get("k") in _HIGHLIGHTS]
+    return (big or [e["text"] for e in entries])[-n:]
+
+
+def since(t0: float) -> list[dict]:
+    """Todo lo archivado después del instante t0 (puede abarcar varios días)."""
+    day, today = dt.date.fromtimestamp(t0), dt.date.today()
+    out = []
+    while day <= today:
+        out += [e for e in load(day.isoformat()) if e.get("t", 0) > t0]
+        day += dt.timedelta(days=1)
+    return out
+
+
+_IP = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b|(?<![\w:])(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{1,4}(?![\w:])", re.I)
+_COMMON_HOSTS = {"localhost", "fedora", "ubuntu", "debian", "arch", "archlinux", "pop-os", "linux", "nixos"}
+
+
+def scrub(text: str) -> str:
+    """Para compartir: saca IPs, el usuario y el nombre de la máquina (las crónicas
+    viejas los guardaban tal cual)."""
+    text = _IP.sub("…", text)
+    words_ = {getpass.getuser()}
+    host = socket.gethostname().split(".")[0]
+    if host.lower() not in _COMMON_HOSTS:
+        words_.add(host)
+    for w in words_:
+        if len(w) >= 3:
+            text = re.sub(rf"\b{re.escape(w)}\b", "…", text, flags=re.I)
+    return text
+
+
 def build(day: str, entries: list[dict], kingdom: str, era: str = "", markdown: bool = True) -> str:
     date = dt.date.fromisoformat(day).strftime("%d/%m/%Y")
     if not entries:
         return tr("story.empty", date=date)
-    keys = Counter(e.get("k", "") for e in entries)
-    counts = raw("story.count")
-    parts = [counts[name][0 if n == 1 else 1].format(n=n) for name, ks in _COUNT.items()
-             if (n := sum(keys[k] for k in ks))]
+    parts = count_parts(entries)
     title = tr("story.title", kingdom=kingdom, date=date)
     out = [f"# {title}" if markdown else title, ""]
     if era:

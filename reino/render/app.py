@@ -176,8 +176,11 @@ class Wallpaper:
 
         self.win.present()
         self._resume()
+        self.update_check = cfg.get("update", {}).get("check", True)
         if not self.layered:
             GLib.idle_add(self._first_run)
+            self.win.connect("close-request", lambda *_: _save_prefs(last_seen=time.time()) and False)
+            GLib.timeout_add_seconds(60, self._mark_seen)
 
     # -- entrada del usuario -------------------------------------------------
 
@@ -235,6 +238,8 @@ class Wallpaper:
             self._menu_action(p.menu_action_at(ux, uy), now)
         elif region == "chron_dl":
             self._export_story(now)
+        elif region == "chron_share":
+            self._share_day(now)
         elif region == "chron_size":
             p.cycle_chronicle()
         elif p.menu_open:                           # clic afuera: cierra el menú
@@ -266,6 +271,12 @@ class Wallpaper:
             p.toggle_menu(False)                    # elegido el poder, el menú se cierra para apuntar
         elif action[0] == "story":
             self._export_story(now)
+        elif action[0] == "share":
+            p.toggle_menu(False)
+            self._share_day(now)
+        elif action[0] == "update":
+            p.toggle_menu(False)
+            self._do_update()
         elif action[0] == "wallpaper":
             self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
@@ -286,18 +297,134 @@ class Wallpaper:
         from .. import cli
         self.painter.wallpaper_on = cli.wallpaper_status()
         self.painter._ui_dirty = True
-        if not _prefs().get("wallpaper_asked"):
+        prefs = _prefs()
+        if not prefs.get("wallpaper_asked"):
             self.painter.show_dialog(ui("dialog.wp.title"),
                                      [(ui("dialog.wp.yes"), "wp_yes"), (ui("dialog.wp.no"), "wp_no")],
                                      ui("dialog.wp.note"))
+        else:
+            self._show_away(prefs.get("last_seen"))
+        _save_prefs(last_seen=time.time())
+        if self.update_check:
+            self._check_update(prefs)
         self._render()
         return GLib.SOURCE_REMOVE
 
+    def _mark_seen(self):
+        _save_prefs(last_seen=time.time())
+        return GLib.SOURCE_CONTINUE
+
+    def _show_away(self, last_seen: float | None):
+        """Al volver después de un rato: qué pasó mientras tanto."""
+        from .. import story
+        if not last_seen or time.time() - last_seen < 20 * 60:
+            return
+        entries = story.since(last_seen)
+        if len(entries) < 3:
+            return
+        mins = int((time.time() - last_seen) / 60)
+        span = f"{mins // 60} h {mins % 60:02d} min" if mins >= 60 else f"{mins} min"
+        parts = story.count_parts(entries)
+        lines = [ui("dialog.away.counts", events=len(entries), parts=", ".join(parts) or "-")]
+        lines += [f"- {t}" for t in story.highlights(entries, 5)]
+        self.painter.show_dialog(ui("dialog.away.title", time=span), [(ui("dialog.away.ok"), "close")],
+                                 lines=lines)
+
     def _dialog_action(self, action: str, now: float):
-        _save_prefs(wallpaper_asked=True)
         self.painter.close_dialog()
-        if action == "wp_yes":
-            self._set_wallpaper(True)
+        if action in ("wp_yes", "wp_no"):
+            _save_prefs(wallpaper_asked=True)
+            if action == "wp_yes":
+                self._set_wallpaper(True)
+        elif action == "relaunch":
+            from .. import cli
+            cli.relaunch_window()
+            self.win.get_application().quit()
+
+    # -- actualizaciones ---------------------------------------------------------
+
+    def _check_update(self, prefs: dict):
+        """Una consulta a GitHub cada 6 horas como mucho (sin trabar la ventana)."""
+        import threading
+        from .. import __version__, update
+
+        def show(version):
+            if version and update._parse(version) > update._parse(__version__):
+                self.painter.update_available = version
+                self.painter._ui_dirty = True
+                self.painter.toast(ui("update.available", version=version), time.monotonic(), secs=8)
+                self._render()
+            return GLib.SOURCE_REMOVE
+
+        if time.time() - prefs.get("update_checked", 0) < 6 * 3600:
+            show(prefs.get("update_latest"))
+            return
+
+        def work():
+            version = update.latest()
+            if version:
+                _save_prefs(update_checked=time.time(), update_latest=version)
+            GLib.idle_add(show, version)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _do_update(self):
+        import threading
+        from .. import cli
+        version = self.painter.update_available or "main"
+        self.painter.toast(ui("update.working", version=version), time.monotonic(), secs=30)
+        self._render()
+
+        def work():
+            ok, detail, _ = cli.apply_update()
+            GLib.idle_add(done, ok, detail)
+
+        def done(ok, detail):
+            p = self.painter
+            if ok:
+                p.update_available = None
+                _save_prefs(update_checked=0)
+                p.show_dialog(ui("dialog.updated.title", version=version),
+                              [(ui("dialog.updated.restart"), "relaunch"), (ui("dialog.updated.later"), "close")],
+                              ui("dialog.updated.note"))
+            else:
+                p.toast(ui("update.failed", detail=detail), time.monotonic(), ok=False, secs=10)
+            self._render()
+            return GLib.SOURCE_REMOVE
+        threading.Thread(target=work, daemon=True).start()
+
+    # -- compartir ---------------------------------------------------------------
+
+    def _share_day(self, now: float):
+        """Tarjeta PNG + relato en Markdown, sin IPs ni usuarios, en Imágenes/Kernel Kingdom.
+        El texto corto queda en el portapapeles, listo para pegar."""
+        from .. import story
+        from ..i18n import tr
+        p = self.painter
+        day = time.strftime("%Y-%m-%d")
+        entries = story.load(day)
+        if not entries:
+            p.toast(ui("share.empty"), now, ok=False)
+            return
+        st = p.state or {}
+        kingdom = st.get("kingdom", "")
+        date = time.strftime("%d/%m/%Y")
+        parts = story.count_parts(entries)
+        title = tr("story.title", kingdom=kingdom, date=date)
+        subtitle = ui("share.subtitle", date=date, parts=", ".join(parts[:4]) or tr("story.none"))
+        lines = [story.scrub(t) for t in story.highlights(entries, 6)]
+        pics = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES) or str(Path.home() / "Pictures")
+        folder = Path(pics) / "Kernel Kingdom"
+        folder.mkdir(parents=True, exist_ok=True)
+        png, md = folder / f"kernel-kingdom-{day}.png", folder / f"kernel-kingdom-{day}.md"
+        p.share_card(title, subtitle, lines, ui("share.footer"), now).write_to_png(str(png))
+        md.write_text(story.scrub(story.build(day, entries, kingdom, st.get("era_name", ""))), encoding="utf-8")
+        text = "\n".join([title, subtitle, ""] + [f"- {t}" for t in lines] + ["", ui("share.footer")])
+        self.win.get_clipboard().set(text)
+        p.toast(ui("share.saved", path=str(folder).replace(str(Path.home()), "~")), now, secs=8)
+        try:
+            Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
+        except GLib.Error:
+            pass
 
     def _set_wallpaper(self, on: bool):
         """Prende o apaga el fondo (servicios de systemd) sin trabar la ventana."""
@@ -510,6 +637,8 @@ class Wallpaper:
 
     def _poll_state(self):
         """stat() una vez por segundo: más simple y robusto que inotify con rename."""
+        if not self.layered:
+            self._check_focus_request()
         try:
             mtime = self.state_path.stat().st_mtime_ns
             if mtime != self._mtime:
@@ -523,6 +652,21 @@ class Wallpaper:
         except (OSError, ValueError):
             pass
         return GLib.SOURCE_CONTINUE
+
+    def _check_focus_request(self):
+        """Alguien tocó una notificación: ir a ese lugar del mapa."""
+        from ..notify import focus_file
+        f = focus_file()
+        if not f.exists():
+            return
+        try:
+            req = json.loads(f.read_text())
+            f.unlink()
+        except (OSError, ValueError):
+            return
+        if time.time() - req.get("t", 0) < 60 and self.painter.state:
+            self.win.present()
+            self._focus_tile(req["x"], req["y"], time.monotonic())
 
     def _render(self):
         w, h = self.view.get_width(), self.view.get_height()

@@ -27,6 +27,7 @@ kernel-kingdom window     # open the window: zoom, powers, realms, chronicle (al
 kernel-kingdom stop       # stop everything
 kernel-kingdom story      # the story of the day (.md + .txt)
 kernel-kingdom config     # your config: ~/.config/kernel-kingdom/config.toml (language: auto, en, es)
+kernel-kingdom update     # get the latest version (your world is kept)
 kernel-kingdom uninstall
 ```
 
@@ -34,7 +35,15 @@ After installing, **Kernel Kingdom** shows up in your applications menu. The wor
 runs as a background service: closing the window (or the terminal) never stops it.
 In the window everything lives under the **Menu** button (top right): which panels
 to show, the Sovereign powers and the world actions; the chronicle has its own
-**Download day** button.
+**Share** and **Download day** buttons. When a new version is out, the window
+tells you and updates itself from **Menu > World > Update**. Big events (wars,
+sacked capitals, wonders) also arrive as **desktop notifications**; click one to
+fly there (`[notify]` in the config).
+
+**Share your kingdom:** *Share* saves a picture card of the island with the
+day's headlines plus the story as Markdown in `~/Pictures/Kernel Kingdom` (IPs
+and user names are removed) and copies a short text to the clipboard. Post your
+chronicles in [Discussions › Show and tell](https://github.com/rsmedrano-cloud/kernel-kingdom/discussions/categories/show-and-tell)!
 
 ## What feeds the world
 
@@ -81,11 +90,16 @@ temples found **religions** with their own deities; treasuries pay for
 The wallpaper is for watching: clicks go through to your desktop. Open
 `kernel-kingdom window` to act:
 
-- **Sovereign powers** (powers bar or keys 1–7): **Lightning**, **Rain**,
-  **Blessing**, **Hero**, **Forest**, **Lighthouse**, **Festival**, paid with what
-  the kingdom produces (gold, stone, mana, defense). Building takes people and
-  time: workers walk from the nearest city to raise your lighthouse, druids plant
-  the forest tile by tile.
+- **Sovereign powers** (Menu, or keys 1–9): **Lightning**, **Rain**, **Blessing**,
+  **Hero**, **Forest**, **Lighthouse**, **Festival**, **Discord**, **Exodus**, and the
+  big spenders: **Wonders** (Colossus, Colosseum, Observatory, Hanging Gardens, each
+  with an effect and each pricier than the last), a **Dragon** that burns a
+  region, **Walls** that make a capital hold most sieges, and **Truce** to end a
+  war. Paid with what the kingdom produces (gold, stone, mana, defense); a fat
+  treasury attracts pirates. Building takes people and time: workers walk from
+  the nearest city to raise your lighthouse or wonder, druids plant the forest
+  tile by tile.
+- **While you were away**: reopen the window after a while and it sums up what happened.
 - **Every realm, living or fallen**, in a scrollable list; click one to fly to its capital.
 - **The whole chronicle**: scroll back through history, `c` expands it, PgUp/PgDn.
 

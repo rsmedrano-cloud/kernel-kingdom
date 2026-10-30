@@ -40,8 +40,10 @@ SAVE_VERSION = 4
 MILESTONES = (25, 50, 100, 200, 400, 800)
 KEY_MILESTONES = (1_000, 5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000)
 LANDMARKS = ("oraculo", "arena", "teatro", "taberna", "atalaya", "molino", "granero", "mercado", "herreria")
-POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo")
-NO_SHIELD = {"tower", "mine", "lighthouse", "embassy"}
+POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "discordia", "exodo",
+          "maravilla", "dragon", "murallas", "tregua")
+NO_SHIELD = {"tower", "mine", "lighthouse", "embassy", "wonder"}
+WONDERS = ("coloso", "coliseo", "observatorio", "jardines")
 
 
 def _value_noise(n: int, rng: random.Random, cell: float) -> list[float]:
@@ -136,6 +138,7 @@ class World:
             self.power_log = data.get("power_log", [])
             self.expeditions = data.get("expeditions", [])
             self.war_cooldown = data.get("war_cooldown", {})
+            self.dragon = data.get("dragon")
             for f in self.factions.values():          # mundos v3: edificios únicos guardados por nombre
                 f["specials"] = {_migrate_special(k): v for k, v in f.get("specials", {}).items()}
         else:
@@ -160,6 +163,7 @@ class World:
             self.power_log: list[dict] = []
             self.expeditions: list[dict] = []
             self.war_cooldown: dict[str, int] = {}
+            self.dragon: dict | None = None
             self._say("mundo", "world.born", kingdom=self.kingdom)
         self.era.setdefault("idx", self.lore.era_index(self.era.get("boot") or 0))
         self.land_tiles = sum(1 for t in self.terrain if t in LAND)
@@ -279,7 +283,7 @@ class World:
             "chronicle": self.chronicle.entries if full else self.chronicle.recent(40),
             "notables": self.notables if full else [h for h in self.notables if h["alive"]],
             "wars": self.wars, "visitors": self.visitors, "power_log": self.power_log[-5:],
-            "expeditions": self.expeditions, "war_cooldown": self.war_cooldown,
+            "expeditions": self.expeditions, "war_cooldown": self.war_cooldown, "dragon": self.dragon,
         }
         for g in GRIDS:
             d[g] = getattr(self, g)
@@ -292,8 +296,16 @@ class World:
         d["routes"] = self.routes
         d["activity"] = self.activity
         d["era_name"] = self.lore.era_name(self.era)
-        d["powers"] = self.cfg.get("powers", {})
+        d["powers"] = self.power_costs()
         return d
+
+    def power_costs(self) -> dict[str, dict]:
+        """Precio de cada poder; cada maravilla sale más cara que la anterior."""
+        costs = {k: dict(v) for k, v in self.cfg.get("powers", {}).items()}
+        if "maravilla" in costs:
+            k = self.counters.get("wonders", 0)
+            costs["maravilla"] = {r: round(v * 1.6 ** k) for r, v in costs["maravilla"].items()}
+        return costs
 
     # -- simulación ----------------------------------------------------------
 
@@ -311,11 +323,14 @@ class World:
         self._update_roads()
         self._rebuild_walls()
         self._powers(commands or [], events)
+        self._dragon_step(events)
         self._expeditions(events)
         self._weather_effects(snap, events)
         self._nature()
         self._economy_events(snap, dt)
         self._society(snap)
+        self._wonder_effects()
+        self._pirates()
         self._ambition(events)
         self._drift()
         self._adventures()
@@ -566,7 +581,7 @@ class World:
 
     def _update_structures(self, snap: dict):
         fort = self.cfg["fortresses"]
-        seen = {"mine:main"} | {k for k in self.structures if k.startswith("lighthouse:")}
+        seen = {"mine:main"} | {k for k in self.structures if k.startswith(("lighthouse:", "wonder:"))}
         for key, g in snap["fortresses"].items():
             if g["uptime"] < fort["min_uptime"]:
                 continue
@@ -886,7 +901,7 @@ class World:
     # Poderes del Soberano (el usuario gasta recursos) -------------------------
 
     def _powers(self, commands: list[dict], events: list[dict]):
-        costs = self.cfg.get("powers", {})
+        costs = self.power_costs()
         for cmd in commands:
             power = cmd.get("power")
             cost = costs.get(power)
@@ -1014,6 +1029,129 @@ class World:
         self._rebirth(f, time.time())
         return True
 
+    def _power_maravilla(self, i, events) -> bool:
+        """Una obra gigante dentro de un reino: los obreros la levantan de a poco
+        y, terminada, le da algo al reino (o al Soberano)."""
+        f = self._realm_at(i)
+        if not f or i in self._struct_tiles or list(self.xy(i)) == list(f["capital"]) or self.burn[i]:
+            return False
+        n = self.counters.get("wonders", 0)
+        kind = WONDERS[n % len(WONDERS)]
+        x, y = self.xy(i)
+        key = f"wonder:{x}:{y}"
+        title, title_the = (t.format(realm=f["realm"]) for t in words("wonders")[kind])
+        self.structures[key] = {"key": key, "kind": "wonder", "wonder": kind, "name": kind, "x": x, "y": y,
+                                "alive": True, "walls": 0, "title": title, "the": title_the, "building": True,
+                                "fid": f["id"], "since": self.tick}
+        self._struct_tiles[i] = self.structures[key]
+        self.owner[i] = self.level[i] = 0
+        self.counters["wonders"] = n + 1
+        self._launch("build", f, i, work=60, n=10, key=key)
+        self._say("obra", "power.maravilla", (x, y), realm=f["realm"], title=title_the,
+                  effect=words("wonder_effects")[kind])
+        self._say("expedicion", "exp.build.start", (x, y), realm=f["realm"], title=title_the)
+        return True
+
+    def _wonders(self, kind: str) -> list[dict]:
+        return [s for s in self.structures.values() if s["kind"] == "wonder" and s.get("wonder") == kind
+                and s.get("alive") and not s.get("building")]
+
+    def _colossus(self, f: dict) -> bool:
+        return any(s.get("fid") == f["id"] for s in self._wonders("coloso"))
+
+    def _wonder_effects(self):
+        """Coliseo: juegos (fiesta) cada tanto. Jardines: bendición cada tanto."""
+        by_id = {f["id"]: f for f in self.factions.values() if f.get("alive")}
+        for kind, key, flag in (("coliseo", "wonder.games", "festival"), ("jardines", "wonder.bloom", "blessed")):
+            for s in self._wonders(kind):
+                f = by_id.get(s.get("fid"))
+                if f and (self.tick - s.get("since", 0)) % 1800 == 900:
+                    f[flag] = self.tick + 120
+                    self._say("obra", key, (s["x"], s["y"]), realm=f["realm"], title=cap(s.get("the", s["title"])))
+
+    def _power_dragon(self, i, events) -> bool:
+        """Un dragón llega del mar, sobrevuela el lugar elegido escupiendo fuego y se va."""
+        if i is None or self.dragon or self.terrain[i] == WATER:
+            return False
+        x, y = self.xy(i)
+        self.dragon = {"x": x, "y": y, "start": self.tick, "until": self.tick + 45,
+                       "name": self.lore.person(f"dragon:{self.tick}")[0], "burned": 0}
+        self._say("poder", "power.dragon", (x, y), target=self._target_name(i), name=self.dragon["name"])
+        return True
+
+    def _dragon_step(self, events: list[dict]):
+        d = self.dragon
+        if not d:
+            return
+        if self.tick >= d["until"]:
+            self._say("poder", "dragon.leave", (d["x"], d["y"]), name=d["name"],
+                      n=f"{d['burned']} {words('lands')[d['burned'] != 1]}")
+            self.dragon = None
+            return
+        t = self.tick - d["start"]
+        if t < 6 or t % 3:
+            return                                          # primero llega volando
+        near = [self.idx(x, y) for x in range(d["x"] - 3, d["x"] + 4) for y in range(d["y"] - 3, d["y"] + 4)
+                if 0 <= x < self.n and 0 <= y < self.n]
+        near = [i for i in near if self.terrain[i] != WATER and not self.burn[i] and not self.lava[i]]
+        if not near:
+            return
+        built = [i for i in near if self.owner[i] and self.level[i]]
+        i = self.rng.choice(built or near)
+        self.burn[i] = 30
+        if self.terrain[i] == FOREST:
+            for j in self.neighbors(i):
+                if self.terrain[j] == FOREST and self.rng.random() < 0.4:
+                    self.burn[j] = 25
+        d["burned"] += 1
+        d["last"] = list(self.xy(i))
+        events.append({"type": "dragonfire", "x": i % self.n, "y": i // self.n})
+
+    def _power_murallas(self, i, events) -> bool:
+        """Murallas alrededor de la capital: aguantan la mayoría de los asedios."""
+        f = self._realm_at(i)
+        if not f or f.get("walled") == list(f["capital"]):
+            return False
+        f["walled"] = list(f["capital"])
+        self._say("poder", "power.murallas", f["capital"], realm=f["realm"])
+        return True
+
+    def _power_tregua(self, i, events) -> bool:
+        """El Soberano impone la paz en la guerra del reino elegido."""
+        f = self._realm_at(i)
+        key = next((k for k, w in self.wars.items() if f and f["id"] in (w["a"], w["b"])), None)
+        if key is None:
+            return False
+        war = self.wars.pop(key)
+        self.war_cooldown[key] = self.tick + 7200
+        self.expeditions = [e for e in self.expeditions
+                            if not (e["kind"] in ("army", "siegecity") and e["data"].get("war") == key)]
+        by_id = {o["id"]: o for o in self.factions.values()}
+        a, b = by_id.get(war["a"]), by_id.get(war["b"])
+        self._say("poder", "power.tregua", f["capital"], war=war["name"], a=a["realm"] if a else "?",
+                  b=b["realm"] if b else "?")
+        return True
+
+    def _pirates(self):
+        """Un tesoro muy gordo atrae piratas: se llevan una parte."""
+        gold = self.resources["gold"]
+        if gold < 3000 or self.rng.random() > 1 / 5000:
+            return
+        alive = [f for f in self.factions.values() if f.get("alive")]
+        if not alive:
+            return
+        f = max(alive, key=lambda f: f.get("tiles", 0))
+        coast = [i for i, o in enumerate(self.owner) if o == f["id"]
+                 and any(self.terrain[j] == WATER for j in self.neighbors(i))]
+        where = self.xy(self.rng.choice(coast)) if coast else tuple(f["capital"])
+        loot = round(gold * self.rng.uniform(0.1, 0.2))
+        self.resources["gold"] -= loot
+        for i in [self.idx(*where)] + list(self.neighbors(self.idx(*where))):
+            if self.owner[i] and self.rng.random() < 0.5:
+                self.burn[i] = 20
+        self._say("guerra", "pirates", where, realm=f["realm"], gold=loot,
+                  land=self.lore.foreign_land(f"pirates:{self.tick}"))
+
     def _power_fiesta(self, i, events) -> bool:
         f = self._realm_at(i)
         if not f:
@@ -1086,7 +1224,12 @@ class World:
             s = self.structures.get(d["key"])
             if s:
                 s["building"] = False
-                self._say("obra", "exp.build.done", (x, y), title=cap(the(s["title"])))
+                if s["kind"] == "wonder":
+                    self._say("obra", "wonder.done", (x, y), title=s["the"], Title=cap(s["the"]),
+                              effect=words("wonder_effects")[s["wonder"]])
+                else:
+                    self._say("obra", "exp.build.done", (x, y), title=cap(the(s["title"])))
+                s["since"] = self.tick
         elif e["kind"] == "plant":
             if self.terrain[i] in (GRASS, HILL, SAND) and self._wild(i):
                 self.terrain[i] = FOREST
@@ -1100,6 +1243,15 @@ class World:
             d_f = next((o for o in self.factions.values() if o["id"] == d["defender"]), None)
             if not d_f or not d_f.get("alive") or list(d_f["capital"]) != [x, y]:
                 return
+            if self._colossus(d_f):
+                self._say("guerra", "wonder.coloso.held", (x, y), a=f["realm"], b=d_f["realm"])
+                return
+            if d_f.get("walled") == [x, y]:
+                if self.rng.random() < 0.75:
+                    self._say("guerra", "walls.held", (x, y), a=f["realm"], b=d_f["realm"])
+                    return
+                d_f["walled"] = None
+                self._say("guerra", "walls.breach", (x, y), a=f["realm"], b=d_f["realm"])
             if self.rng.random() < 0.6:
                 self._sack_capital(f, d_f, events)
             else:
@@ -1399,18 +1551,23 @@ class World:
         minutes = dt / 60
         r = self.resources
         inp = snap.get("input") or {}
-        r["gold"] += minutes * 0.05 * sum(1 for o in self.owner if o) + snap.get("net_rx", 0) * dt * 0.002
+        r["gold"] += minutes * 0.02 * sum(1 for o in self.owner if o) + snap.get("net_rx", 0) * dt * 0.002
         r["stone"] = r.get("stone", 0.0) + minutes * 0.2 + (snap.get("disk_r", 0) + snap.get("disk_w", 0)) * dt * 0.001
         r["mana"] += inp.get("keys", 0) * 0.01 + minutes * inp.get("active", 0) * 0.5
         if self.weather["plague"]:
             r["gold"] = max(0.0, r["gold"] - minutes * 2)
+        armory = 150.0                                   # cada fortaleza guarda armas para 150 de defensa
         for s in self.structures.values():
             if not s["alive"]:
                 continue
             if s["kind"] == "tower":
                 r["mana"] += minutes * s.get("floors", 1)
+            elif s["kind"] == "wonder" and s.get("wonder") == "observatorio" and not s.get("building"):
+                r["mana"] += minutes * 1.5
             elif s["kind"] not in NO_SHIELD:
-                r["defense"] += minutes * (1 + s.get("walls", 0))
+                r["defense"] += minutes * 0.25 * (1 + s.get("walls", 0))
+                armory += 150 * (1 + s.get("walls", 0))
+        r["defense"] = min(r["defense"], armory)
 
     # Urbanismo ---------------------------------------------------------------
 
@@ -1632,12 +1789,14 @@ class World:
             if v is None:
                 remote = not host.startswith("local:")
                 land = self.lore.foreign_land(host) if remote else None
-                v = self.visitors[host] = {"land": land, "user": s["user"], "since": now, "remote": remote}
+                # en la crónica (que se ve en pantalla y se comparte) va un nombre del lore, no el usuario real
+                v = self.visitors[host] = {"land": land, "user": s["user"], "since": now, "remote": remote,
+                                           "alias": self.lore.person(f"envoy:{s['user']}@{host}")[0]}
                 count = (snap.get("visits") or {}).get(host if remote else "local", 1)
                 if remote:
-                    self._say("visita", "visit.arrive", land=land, host=host, count=count, user=s["user"])
+                    self._say("visita", "visit.arrive", land=land, count=count, user=v["alias"])
                 else:
-                    self._say("visita", "visit.local", user=s["user"], tty=s["tty"])
+                    self._say("visita", "visit.local", user=v["alias"], tty=s["tty"])
             if v["remote"]:
                 key = f"embassy:{host}"
                 seen.add(key)
@@ -1652,9 +1811,9 @@ class World:
             v = self.visitors.pop(host)
             mins = f"{(now - v['since']) / 60:.0f}"
             if v["remote"]:
-                self._say("visita", "visit.leave", land=v["land"], user=v["user"], mins=mins)
+                self._say("visita", "visit.leave", land=v["land"], user=v.get("alias", "?"), mins=mins)
             else:
-                self._say("visita", "visit.local_leave", user=v["user"], mins=mins)
+                self._say("visita", "visit.local_leave", user=v.get("alias", "?"), mins=mins)
         return seen
 
 
