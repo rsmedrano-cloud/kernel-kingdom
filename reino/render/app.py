@@ -14,6 +14,7 @@ arrastrar = mover el mapa (o la ventana, sin zoom), doble clic = sin zoom,
 +/- y 0 también; Esc/q cierra, f pantalla completa, h HUD, c crónica.
 """
 import json
+import os
 import signal
 import sys
 import time
@@ -48,15 +49,26 @@ class WorldView(Gtk.Widget):
     """Dos texturas chicas escaladas con NEAREST (lo hace la GPU): el mundo (con
     zoom) y la interfaz (siempre a escala base, para que el texto no crezca)."""
 
+    # GTK < 4.10 (Debian 12, antiX...) no tiene append_scaled_texture: ahí escala cairo
+    SCALED = hasattr(Gtk.Snapshot, "append_scaled_texture") and not os.environ.get("KK_CAIRO_SCALE")
+
     def __init__(self):
         super().__init__(hexpand=True, vexpand=True)
-        self.layers: list[list] = [[None, 1.0], [None, 1.0]]   # [textura, escala]
+        self.layers: list[list] = [[None, 1.0, None], [None, 1.0, None]]   # [textura, escala, superficie]
 
     def do_snapshot(self, snapshot):
-        for tex, scale in self.layers:
-            if tex is not None:
-                rect = Graphene.Rect().init(0, 0, tex.get_width() * scale, tex.get_height() * scale)
+        for tex, scale, surf in self.layers:
+            if tex is None:
+                continue
+            rect = Graphene.Rect().init(0, 0, tex.get_width() * scale, tex.get_height() * scale)
+            if self.SCALED:
                 snapshot.append_scaled_texture(tex, Gsk.ScalingFilter.NEAREST, rect)
+            else:
+                cr = snapshot.append_cairo(rect)
+                cr.scale(scale, scale)
+                cr.set_source_surface(surf, 0, 0)
+                cr.get_source().set_filter(cairo.FILTER_NEAREST)
+                cr.paint()
 
 
 def _texture(surf) -> Gdk.Texture:
@@ -432,7 +444,7 @@ class Wallpaper:
         p.share_card(title, subtitle, lines, ui("share.footer"), now).write_to_png(str(png))
         md.write_text(story.scrub(story.build(day, entries, kingdom, st.get("era_name", ""))), encoding="utf-8")
         text = "\n".join([title, subtitle, ""] + [f"- {t}" for t in lines] + ["", ui("share.footer")])
-        self.win.get_clipboard().set(text)
+        self.win.get_clipboard().set_content(Gdk.ContentProvider.new_for_value(text))   # API de GTK 4.0
         p.toast(ui("share.saved", path=str(folder).replace(str(Path.home()), "~")), now, secs=8)
         try:
             Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
@@ -693,10 +705,11 @@ class Wallpaper:
         fw, fh = int(-(-w // scale)), int(-(-h // scale))
         # con zoom, sprites al doble de resolución: la textura mide fw*u y se escala scale/u
         self.painter.set_detail(detail_for(scale) if self.zoom else 1)
-        self.view.layers[0] = [_texture(self.painter.frame(fw, fh, now)), scale / self.painter.u]
+        world = self.painter.frame(fw, fh, now)
+        self.view.layers[0] = [_texture(world), scale / self.painter.u, world]
         ui, changed = self.painter.ui(int(-(-w // base)), int(-(-h // base)), now)
         if changed or self.view.layers[1][0] is None or self.view.layers[1][1] != base:
-            self.view.layers[1] = [_texture(ui), base]
+            self.view.layers[1] = [_texture(ui), base, ui]
         self._scale, self._base = scale, base
         self.view.queue_draw()
 

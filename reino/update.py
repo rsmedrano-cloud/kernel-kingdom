@@ -38,13 +38,27 @@ def newer(timeout: float = 6.0) -> str | None:
     return v if v and _parse(v) > _parse(__version__) else None
 
 
+def _offline_build() -> bool:
+    try:
+        import psutil  # noqa: F401
+        import importlib.util
+        import setuptools
+        v = int(setuptools.__version__.split(".")[0])
+        return v >= 61 and (v >= 71 or importlib.util.find_spec("wheel") is not None)
+    except (ImportError, ValueError):
+        return False
+
+
 def install() -> tuple[bool, str]:
     """Baja e instala la última versión. Devuelve (ok, detalle)."""
     if (ROOT / ".git").exists() and shutil.which("git"):
         cmds = [["git", "-C", str(ROOT), "pull", "--ff-only"]]
     else:
         pip = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check"]
-        cmds = [pip + ["--upgrade", "--force-reinstall", "--no-deps", TARBALL], pip + [TARBALL]]
+        if _offline_build():                     # psutil y setuptools del sistema: nada de PyPI
+            cmds = [pip + ["--upgrade", "--force-reinstall", "--no-deps", "--no-build-isolation", TARBALL]]
+        else:
+            cmds = [pip + ["--upgrade", "--force-reinstall", "--no-deps", TARBALL], pip + [TARBALL]]
     for cmd in cmds:
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode:
