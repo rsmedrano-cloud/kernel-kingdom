@@ -66,9 +66,9 @@
     <p class="tag">A pixel-art isometric live wallpaper where your computer is a kingdom.
       Browsers become empires, containers become citadels, compiling summons thunderstorms —
       and a procedural chronicle tells the story.</p>
-    <img class="shot" src="img/overview.png" alt="An isometric island with several walled cities, forests, roads and a mountain; a status panel, a chronicle and a powers bar overlay the map." width="1920" height="1080">
+    <img class="shot" src="img/overview.png" alt="An isometric island with several cities, forests, roads and a mountain, with realm and region names on the map; a status panel and a chronicle overlay it." width="1920" height="1080">
     <div class="install"><code>curl -fsSL https://raw.githubusercontent.com/rsmedrano-cloud/kernel-kingdom/main/install.sh | bash</code></div>
-    <p class="small">Linux · Wayland (COSMIC, Sway, Hyprland, KDE…) · window mode anywhere · English &amp; Español · MIT</p>
+    <p class="small">Linux · wallpaper on Wayland (COSMIC, Sway, Hyprland, KDE…) · window mode anywhere, X11 and 32-bit included · English &amp; Español · MIT</p>
     <div class="buttons">
       <a class="btn" href="https://github.com/rsmedrano-cloud/kernel-kingdom">GitHub</a>
       <a class="btn alt" href="#features">What it does</a>
@@ -95,7 +95,7 @@
 A thunderstorm, summoned by the smiths of rustc, falls upon Fedorovia (CPU 97%).
 The War of the Orphaned Tabs breaks out: Cromaria invades Zenhar.
 In the temple of Zorravia they worship Fireix, Mother of Threads.
-A ship flying the flag of Erigarth docks: ana comes ashore.
+A ship flying the flag of Erigarth docks: Aldor comes ashore.
 Loruin the Wise wrote a treatise on the art of freeing memory.
 The old god 7.2.8 has fallen; now they pray to Linux 7.2.13.</pre>
   </section>
@@ -106,6 +106,18 @@ The old god 7.2.8 has fallen; now they pray to Linux 7.2.13.</pre>
       razed and sacked capitals move elsewhere. In the evening your island looks different than it did in the morning.</p>
     <p class="small">Every day ends up as a story you can read or listen to:
       <a href="story-example.md">a full example day</a> (<a href="story-example.es.md">en castellano</a>).</p>
+    <div class="duo">
+      <figure><img class="shot" src="img/war.gif" alt="A siege: two trebuchets bombard a capital while houses burn and smoke rises" loading="lazy" width="1280" height="720"><figcaption>Wars you can see: armies, trebuchets, fires.</figcaption></figure>
+      <figure><img class="shot" src="img/timelapse.gif" alt="A political map of the island animating through a day as realms grow, clash and move" loading="lazy" width="740" height="406"><figcaption>The day's borders as a GIF.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Keep it in a corner</h2>
+    <div class="duo">
+      <figure><img class="shot" src="img/mini.png" alt="Mini mode: a small window zoomed on a city with a dragon flying over it and a news strip at the bottom" loading="lazy" width="960" height="600"><figcaption>Mini mode: the camera flies to whatever is happening; click a headline to go there.</figcaption></figure>
+      <figure><img class="shot" src="img/share-card.png" alt="A share card: the whole island next to the day's headlines" loading="lazy" width="1200" height="675"><figcaption>Share the day as a card, without IPs or user names.</figcaption></figure>
+    </div>
   </section>
 
   <section>
@@ -118,7 +130,7 @@ The old god 7.2.8 has fallen; now they pray to Linux 7.2.13.</pre>
 
   <section>
     <h2>Zoom in, the city is alive</h2>
-    <img class="shot" src="img/city.png" alt="Close-up of a walled city: palace, paved square, houses with red roofs, workshops and windmills" loading="lazy" width="1920" height="1080">
+    <img class="shot" src="img/city.png" alt="Close-up of a city: palace, a giant bronze colossus, paved square, houses with red roofs and fields" loading="lazy" width="1920" height="1080">
     <p class="small">Villagers have jobs and walk the streets to work. Sprites are re-rendered at double resolution when you zoom.</p>
   </section>
 
@@ -130,6 +142,9 @@ The old god 7.2.8 has fallen; now they pray to Linux 7.2.13.</pre>
       <div class="card"><h3>Blessing &amp; Festival</h3><p>Gold for a realm, heroes for a party.</p></div>
       <div class="card"><h3>Forest &amp; Lighthouse</h3><p>Shape the island yourself.</p></div>
       <div class="card"><h3>Explorers &amp; sieges</h3><p>Expeditions head into the wild; big realms march on fortresses.</p></div>
+      <div class="card"><h3>Wonders</h3><p>Colossus, Colosseum, Observatory, Hanging Gardens — each with an effect.</p></div>
+      <div class="card"><h3>Dragon</h3><p>Flies in from the sea and sets a region ablaze.</p></div>
+      <div class="card"><h3>Walls &amp; Truce</h3><p>Fortify a capital or stop a war.</p></div>
     </div>
     <p class="small">The wallpaper is for watching; open <code>kernel-kingdom window</code> to act. Building takes people and time:
       workers walk from the nearest city to raise your lighthouse. Resources come from your system: territory makes gold,
@@ -141,12 +156,13 @@ The old god 7.2.8 has fallen; now they pray to Linux 7.2.13.</pre>
     <div class="grid">
       <div class="card"><h3>30 FPS cap</h3><p>About 6 FPS when nothing is happening.</p></div>
       <div class="card"><h3>Pauses itself</h3><p>0% CPU while windows cover the wallpaper (COSMIC).</p></div>
-      <div class="card"><h3>Tiny footprint</h3><p>~1–3% of one core while visible; the daemon ~2%.</p></div>
+      <div class="card"><h3>Tiny footprint</h3><p>~3% of one core for the window at rest; the daemon under 1%.</p></div>
     </div>
   </section>
 
   <footer>
-    <p><code>kernel-kingdom</code> · <code>kernel-kingdom window</code> · <code>kernel-kingdom chronicle</code> · <code>kernel-kingdom uninstall</code></p>
+    <p><code>kernel-kingdom</code> · <code>kernel-kingdom window --mini</code> · <code>kernel-kingdom timelapse</code> · <code>kernel-kingdom update</code> · <code>kernel-kingdom uninstall</code></p>
+    <p>Share your chronicles in <a href="https://github.com/rsmedrano-cloud/kernel-kingdom/discussions/categories/show-and-tell">Discussions › Show and tell</a></p>
     <p>MIT · <a href="https://github.com/rsmedrano-cloud/kernel-kingdom">source</a> · <a href="https://github.com/rsmedrano-cloud/kernel-kingdom/blob/main/README.es.md">en castellano</a></p>
   </footer>
 </div>

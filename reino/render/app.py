@@ -125,6 +125,7 @@ class Wallpaper:
         self.zoom = 0                  # niveles de zoom sobre la escala base (solo en ventana)
         self._pointer = (0.0, 0.0)
         self._drag = None
+        self._dragged_at = 0.0
         self.paused = False
 
         self.win = Gtk.ApplicationWindow(application=app, title="kernel-kingdom")
@@ -162,6 +163,7 @@ class Wallpaper:
             drag = Gtk.GestureDrag(button=1)
             drag.connect("drag-begin", self._on_drag_begin)
             drag.connect("drag-update", self._on_drag_update)
+            drag.connect("drag-end", self._on_drag_end)
             self.view.add_controller(drag)
 
         self.painter.window_mode = not self.layered
@@ -241,8 +243,8 @@ class Wallpaper:
         return True
 
     def _on_click(self, gesture, n_press, x, y):
-        if self.paused or (self._drag and self._drag["moved"]):
-            return
+        if self.paused or (self._drag and self._drag["moved"]) or time.monotonic() - self._dragged_at < 0.3:
+            return                                  # fue un arrastre, no un clic
         now = time.monotonic()
         p = self.painter
         ux, uy = x / self._uis, y / self._uis
@@ -302,6 +304,9 @@ class Wallpaper:
         elif action[0] == "update":
             p.toggle_menu(False)
             self._do_update()
+        elif action[0] == "check_update":
+            p.toggle_menu(False)
+            self._check_update({}, manual=True)
         elif action[0] == "language":
             self._switch_language(now)
         elif action[0] == "timelapse":
@@ -419,20 +424,31 @@ class Wallpaper:
 
     # -- actualizaciones ---------------------------------------------------------
 
-    def _check_update(self, prefs: dict):
-        """Una consulta a GitHub cada 6 horas como mucho (sin trabar la ventana)."""
+    def _check_update(self, prefs: dict, manual: bool = False):
+        """Una consulta a GitHub cada 6 horas como mucho (sin trabar la ventana).
+        Pedida a mano desde el Menú: consulta ya y, si hay versión nueva, actualiza."""
         import threading
         from .. import __version__, update
 
         def show(version):
+            now = time.monotonic()
             if version and update._parse(version) > update._parse(__version__):
                 self.painter.update_available = version
                 self.painter._ui_dirty = True
-                self.painter.toast(ui("update.available", version=version), time.monotonic(), secs=8)
-                self._render()
+                if manual:
+                    self._do_update()
+                    return GLib.SOURCE_REMOVE
+                self.painter.toast(ui("update.available", version=version), now, secs=8)
+            elif manual:
+                self.painter.toast(ui("update.latest", version=__version__) if version else ui("update.offline"),
+                                   now, ok=bool(version), secs=6)
+            self._render()
             return GLib.SOURCE_REMOVE
 
-        if time.time() - prefs.get("update_checked", 0) < 6 * 3600:
+        if manual:
+            self.painter.toast(ui("update.checking"), time.monotonic(), secs=10)
+            self._render()
+        elif time.time() - prefs.get("update_checked", 0) < 6 * 3600:
             show(prefs.get("update_latest"))
             return
 
@@ -644,6 +660,11 @@ class Wallpaper:
     def _on_drag_begin(self, gesture, x, y):
         self._drag = {"start": (x, y), "pan": list(self.painter.pan), "moved": False}
 
+    def _on_drag_end(self, gesture, ox, oy):
+        if self._drag and self._drag["moved"]:
+            self._dragged_at = time.monotonic()
+        self._drag = None                           # sin esto la cámara del modo mini quedaba congelada
+
     def _on_drag_update(self, gesture, ox, oy):
         d = self._drag
         if d is None or (not d["moved"] and abs(ox) + abs(oy) < 5):
@@ -791,7 +812,7 @@ class Wallpaper:
         dt, self._last_frame = now - self._last_frame, now
         base = fit_scale(w, h, self.painter.content_size(), self.pixel_scale)
         scales = zoom_scales(base)
-        if self.painter.mini and not self._drag:
+        if self.painter.mini and not (self._drag and self._drag["moved"]):
             target = w / (TW * 14)                        # ~14 casillas de ancho, sea cual sea el tamaño
             self.zoom = min(range(1, len(scales)), key=lambda k: abs(scales[k] - target), default=0)
             self.painter.director_step(now, min(dt, 0.5))

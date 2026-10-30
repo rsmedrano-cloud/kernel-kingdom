@@ -75,6 +75,12 @@ capital it is **sacked and the court flees**, rebuilding the city elsewhere.
 The terrain lives too: forests spread, sawmills cut them, fires leave meadows,
 lava hardens into hills. Every install gets its own island.
 
+![a siege: trebuchets bombard a capital while houses burn](docs/img/war.gif)
+
+Every day's borders, as a GIF (Menu > World > Timelapse):
+
+![timelapse of a day: realms grow, clash and move](docs/img/timelapse.gif)
+
 ## The story of the day
 
 Every chronicle entry is archived per day. At midnight (or whenever you press
@@ -86,6 +92,10 @@ You get Markdown and plain text, ready to read aloud or feed to a TTS voice.
 On top of that, **heroes** with names and traits are born, do deeds and die;
 temples found **religions** with their own deities; treasuries pay for
 **monuments**. Villagers have jobs and walk the streets to work, WorldBox-style.
+
+**Share** turns the day into a card (and a Markdown story) without IPs or user names:
+
+![share card: the island next to the day's headlines](docs/img/share-card.png)
 
 ## Watch on the desktop, play in the window
 
@@ -125,6 +135,10 @@ The map moves on its own too: **explorers** head into the wild and come back wit
 finds, **armies march** in columns when a war breaks out, and big realms
 **besiege fortresses** (the walls hold if you have defense; if not, they fall and
 the town is looted).
+
+| The Menu | Mini mode |
+|---|---|
+| ![menu: view toggles, the Sovereign powers and world actions](docs/img/menu.png) | ![mini mode: an auto camera over a city with a dragon, news strip below](docs/img/mini.png) |
 
 ![night storm](docs/img/night-storm.png)
 

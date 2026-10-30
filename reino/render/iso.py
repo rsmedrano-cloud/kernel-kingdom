@@ -1833,7 +1833,8 @@ class Painter:
         self.ticker, self._ticker_lines = None, {}
         if self.mini:
             cap_ = self.director.get("caption") or ""
-            rows = [(cap_, GOLD, None)] if cap_ else []
+            cap_e = next((e for e in reversed(st.get("chronicle", [])[-60:]) if e["text"] == cap_ and "x" in e), None)
+            rows = [(cap_, GOLD, cap_e)] if cap_ else []
             recent = [e for e in reversed(st.get("chronicle", [])[-12:]) if "x" in e and e["text"] != cap_][:2]
             rows += [(e["text"], TEXT, e) for e in recent]
             if rows:
@@ -1981,6 +1982,9 @@ class Painter:
         add(ui("menu.world"), GOLD, None)
         if self.update_available:
             add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
+        else:
+            from .. import __version__
+            add(f"  {ui('menu.check_update', version=__version__)}", TEXT, ("check_update",))
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.share')}", TEXT, ("share",))
         add(f"  {ui('menu.timelapse')}", TEXT, ("timelapse",))
@@ -2385,7 +2389,16 @@ class Painter:
         st = self.state
         k = self.ui_ratio
         cam = getattr(self, "cam", (0, 0))
-        placed = []
+        placed = []                                        # los paneles también cuentan: nada de nombres debajo
+        if self.hud:
+            placed.append((6, 6, self.hud.get_width(), self.hud.get_height()))
+        for panel, at_bottom in ((self.chron, True), (self.ticker, True)):
+            if panel:
+                placed.append((6, fh - panel.get_height() - 22, panel.get_width(), panel.get_height() + 22))
+        if self.menu_button:
+            mw = max(self.menu_button.get_width(), self.menu_panel.get_width() if self.menu_panel else 0)
+            mh = self.menu_button.get_height() + (self.menu_panel.get_height() + 2 if self.menu_panel else 0)
+            placed.append((fw - mw - 6, 6, mw, mh))
 
         def put(text, wx, wy, col, size, bold):
             ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL,

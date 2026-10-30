@@ -217,10 +217,10 @@ class Lore:
         cults = words("cults")
         return cults[c["cult_idx"] % len(cults)].format(d=c["name"])
 
-    def war_name(self, a: dict, b: dict, key: str) -> str:
+    def war_name(self, a: dict, b: dict, key: str, place: str | None = None) -> str:
         rng = rng_for(self.seed, "war:" + key)
         return rng.choice(words("wars")).format(noun=rng.choice(words("war_nouns")), a=a["realm"], b=b["realm"],
-                                                place=self.place("frontera:" + key),
+                                                place=place or self.place("frontera:" + key),
                                                 group=rng.choice(words("war_groups")))
 
     def foreign_land(self, host: str) -> str:

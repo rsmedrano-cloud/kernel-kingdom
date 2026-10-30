@@ -398,6 +398,15 @@ class World:
             used.add(name)
             self.regions.append({"name": name, "kind": kind, "c": list(self.xy(c)), "size": len(tiles)})
 
+    def _border_place(self, a: dict, b: dict) -> str:
+        """Región donde se tocan (o más se acercan) dos reinos: ahí se nombra la guerra."""
+        ta = [i for i, o in enumerate(self.owner) if o == a["id"]]
+        border = [i for i in ta if any(self.owner[j] == b["id"] for j in self.neighbors(i))]
+        if border:
+            return self._place_at(border[len(border) // 2])
+        bi = self.idx(*b["capital"])
+        return self._place_at(min(ta, key=lambda i: self._dist(i, b["capital"]), default=bi))
+
     def _place_at(self, i: int) -> str:
         """Nombre de la región de una casilla (para que la crónica coincida con el mapa)."""
         r = self.region[i] if 0 <= i < len(self.region) else -1
@@ -1469,7 +1478,8 @@ class World:
     def _declare_war(self, a: dict, b: dict):
         key = ":".join(map(str, sorted((a["id"], b["id"]))))
         reason = self.rng.choice(words("war_reasons")).format(place=self.lore.place(f"motivo:{self.tick}"))
-        war = self.wars[key] = {"name": self.lore.war_name(a, b, f"{key}:{self.tick}"), "a": a["id"], "b": b["id"],
+        name = self.lore.war_name(a, b, f"{key}:{self.tick}", place=self._border_place(a, b))
+        war = self.wars[key] = {"name": name, "a": a["id"], "b": b["id"],
                                 "start": self.tick, "last": self.tick, "score": {}, "front": [],
                                 "until": self.tick + self.rng.randint(300, 900)}   # 10 a 30 minutos
         self._say("guerra", "war.declare", b["capital"], a=a["realm"], b=b["realm"], reason=reason, war=war["name"],
@@ -1735,8 +1745,9 @@ class World:
         self.counters["conquests"] += len(lost)
         war = self.wars.get(key)
         if war is None:
-            war = self.wars[key] = {"name": self.lore.war_name(a, d, f"{key}:{self.tick}"),
-                                    "a": a["id"], "b": d["id"], "start": self.tick, "score": {}, "front": []}
+            name = self.lore.war_name(a, d, f"{key}:{self.tick}", place=self._border_place(a, d))
+            war = self.wars[key] = {"name": name, "a": a["id"], "b": d["id"], "start": self.tick, "score": {},
+                                    "front": []}
             ruler = self.lore.ruler_str(a["ruler"])
             self._say("guerra", "war.start", self.xy(lost[0]), war=war["name"], War=cap(war["name"]),
                       a=a["realm"], b=d["realm"], Ruler=cap(ruler))
@@ -1826,8 +1837,14 @@ class World:
                 f.setdefault("specials", {})["monument"] = plaza[0]
                 self.bld[plaza[0]] = B.MONUMENT
                 self.counters["monuments"] = done + 1
-                self._say("obra", "monument", self.xy(plaza[0]), realm=f["realm"],
-                          name=self.lore.monument(self.lore.ruler_str(f["ruler"]), rng),
+                used = self.counters.setdefault("monument_names", [])
+                name = self.lore.monument(self.lore.ruler_str(f["ruler"]), rng)
+                for _ in range(8):                         # que no se repita un monumento ya levantado
+                    if name not in used:
+                        break
+                    name = self.lore.monument(self.lore.ruler_str(f["ruler"]), rng)
+                used.append(name)
+                self._say("obra", "monument", self.xy(plaza[0]), realm=f["realm"], name=name,
                           gold=f"{self.resources['gold']:.0f}")
 
         # Resumen del día (al cambiar la fecha local)

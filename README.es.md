@@ -76,6 +76,12 @@ a rearmar la ciudad en otro lado. El terreno también vive: los bosques avanzan,
 los aserraderos los talan, los incendios dejan pradera, la lava se endurece en
 colinas. Cada instalación tiene su propia isla.
 
+![un asedio: trebuchets bombardean una capital mientras arden las casas](docs/img/war.gif)
+
+Las fronteras de cada día, en un GIF (Menú > Mundo > Timelapse):
+
+![timelapse de un día: los reinos crecen, chocan y se mudan](docs/img/timelapse.gif)
+
 ## La historia del día
 
 Cada entrada de la crónica se archiva por día. A medianoche (o cuando apretás `e`
@@ -87,6 +93,11 @@ voz sintética. [Ejemplo de un día completo](docs/story-example.es.md).
 Además nacen **héroes** con nombre y carácter que hacen hazañas y mueren; los
 templos fundan **religiones** con su deidad; el tesoro paga **monumentos**. Los
 aldeanos tienen oficio y caminan por las calles al trabajo, al estilo WorldBox.
+
+**Compartir** convierte el día en una tarjeta (y un relato en Markdown), sin IPs ni
+nombres de usuario:
+
+![tarjeta para compartir: la isla junto a los titulares del día](docs/img/share-card.png)
 
 ## En el escritorio se mira, en la ventana se juega
 
@@ -127,6 +138,10 @@ El mapa también se mueve solo: **exploradores** que salen a lo salvaje y vuelve
 con hallazgos, **ejércitos en columna** cuando estalla una guerra, y reinos grandes
 que **sitian fortalezas** (si tenés defensa los muros resisten; si no, caen y hay
 saqueo).
+
+| El Menú | Modo mini |
+|---|---|
+| ![menú: qué ver, los poderes del Soberano y las acciones del mundo](docs/img/menu.png) | ![modo mini: cámara automática sobre una ciudad con un dragón y la tira de noticias](docs/img/mini.png) |
 
 ## Zoom
 
