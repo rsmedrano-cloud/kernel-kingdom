@@ -95,6 +95,12 @@ class Lore:
             return self.place_names[name]
         return _stem(name) + rng_for(self.seed, "place:" + name).choice(_PLACE_SUFFIX)
 
+    def region(self, key: str) -> str:
+        """Nombre propio de una región del mapa (Belwen, Torgard, Ilmaval...)."""
+        rng = rng_for(self.seed, "region:" + key)
+        name = rng.choice(_ONSET) + rng.choice(_CODA)
+        return name + rng.choice(_PLACE_SUFFIX) if rng.random() < 0.45 else name
+
     def structure_name(self, kind: str, name: str) -> str:
         return f"{words('kind_title').get(kind, words('kind_title')['daemon'])} {words('of')} {self.place(name)}"
 

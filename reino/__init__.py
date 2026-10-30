@@ -1,2 +1,2 @@
 """Kernel Kingdom: live wallpaper / idle game alimentado por tu sistema."""
-__version__ = "0.3.0"
+__version__ = "0.3.1"

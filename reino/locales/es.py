@@ -315,6 +315,8 @@ WORDS = {
     },
     "wonder_effects": {"coloso": "su capital ya no podrá ser saqueada", "coliseo": "habrá juegos y fiestas",
                        "observatorio": "el Soberano ganará maná", "jardines": "el reino florecerá"},
+    "region_kinds": {"forest": "Bosque de {n}", "mountains": "Montes de {n}", "hills": "Colinas de {n}",
+                     "coast": "Costa de {n}", "valley": "Valle de {n}", "plains": "Llanos de {n}"},
     "lands": ["tierra", "tierras"],
     "resources": {"gold": "oro", "stone": "piedra", "mana": "maná", "defense": "defensa"},
 }
@@ -432,6 +434,7 @@ UI = {
     "timelapse.saved": "Timelapse guardado: {path}",
     "timelapse.empty": "Todavía no hay fotos de hoy: el mundo saca una cada 10 minutos.",
     "timelapse.realms": "{n} reinos",
+    "menu.labels": "Nombres en el mapa",
     "menu.wallpaper": "Fondo de pantalla",
     "toast.wallpaper_on": "Fondo de pantalla activado ({monitors}). Arranca solo con la sesión.",
     "toast.wallpaper_off": "Fondo de pantalla desactivado. El mundo sigue corriendo.",

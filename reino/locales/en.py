@@ -304,6 +304,8 @@ WORDS = {
     },
     "wonder_effects": {"coloso": "its capital can no longer be sacked", "coliseo": "there will be games and feasts",
                        "observatorio": "the Sovereign will gain mana", "jardines": "the realm will flourish"},
+    "region_kinds": {"forest": "{n} Woods", "mountains": "{n} Mountains", "hills": "{n} Hills",
+                     "coast": "{n} Coast", "valley": "{n} Vale", "plains": "{n} Plains"},
     "lands": ["land", "lands"],
     "resources": {"gold": "gold", "stone": "stone", "mana": "mana", "defense": "defense"},
 }
@@ -421,6 +423,7 @@ UI = {
     "timelapse.saved": "Timelapse saved: {path}",
     "timelapse.empty": "No pictures from today yet: the world takes one every 10 minutes.",
     "timelapse.realms": "{n} realms",
+    "menu.labels": "Names on the map",
     "menu.wallpaper": "Wallpaper",
     "toast.wallpaper_on": "Wallpaper on ({monitors}). It starts with your session.",
     "toast.wallpaper_off": "Wallpaper off. The world keeps running.",

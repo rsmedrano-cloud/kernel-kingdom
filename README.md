@@ -102,9 +102,14 @@ The wallpaper is for watching: clicks go through to your desktop. Open
   the nearest city to raise your lighthouse or wonder, druids plant the forest
   tile by tile.
 - **While you were away**: reopen the window after a while and it sums up what happened.
+- **Names on the map**: realms over their capitals and the island's regions
+  (Daris Woods, Zandorholm Mountains, Ralo Vale...). Regions are fixed, so the
+  chronicle's battles and expeditions happen in places you can find on the map.
+  Toggle in Menu > View (`[render] labels = true` for the wallpaper).
 - **Mini mode** (`m` or Menu > View): no panels, the camera flies by itself to
-  whatever is happening (the dragon, a battle, a siege, a wonder going up, the
-  latest event, or a slow tour of the capitals) with a news strip at the bottom.
+  whatever is happening (the dragon, a battle, a siege, a marching column, a fire,
+  a wonder going up, the latest events, or a slow tour of the capitals) with a news
+  strip at the bottom: click a headline and the camera goes there.
   Made to sit in a corner of a second screen (keep the window floating).
 - **Timelapse of the day** (Menu > World): the world snapshots the borders every
   10 minutes (~2 KB each) and builds a GIF of the day's wars and migrations.

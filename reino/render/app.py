@@ -109,6 +109,7 @@ class Wallpaper:
         self.painter = Painter(cfg["daemon"]["interval"], rc.get("hemisphere", "auto"))
         self.painter.show_chronicle = rc.get("show_chronicle", True)
         self.painter.show_powers = rc.get("show_powers", True)
+        self.painter.show_labels = rc.get("labels", False)
         self.painter.hour_override = args.hour
         self.painter.season_override = getattr(args, "season", None)
 
@@ -254,6 +255,10 @@ class Wallpaper:
             return
         if region == "menu_btn":                    # abrir / cerrar el menú
             p.toggle_menu()
+        elif region == "ticker":                    # modo mini: clic en una noticia -> la cámara va ahí
+            entry = p.ticker_entry_at(ux, uy)
+            if entry:
+                p.director_pin(entry, now)
         elif region == "menu":
             self._menu_action(p.menu_action_at(ux, uy), now)
         elif region == "chron_dl":
@@ -798,6 +803,7 @@ class Wallpaper:
         world = self.painter.frame(fw, fh, now)
         self.view.layers[0] = [_texture(world), scale / self.painter.u, world]
         uis = max(1.0, base)
+        self.painter.ui_ratio = scale / uis                # para ubicar los nombres del mapa en la interfaz
         ui, changed = self.painter.ui(int(-(-w // uis)), int(-(-h // uis)), now)
         if changed or self.view.layers[1][0] is None or self.view.layers[1][1] != uis:
             self.view.layers[1] = [_texture(ui), uis, ui]

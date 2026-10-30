@@ -1069,7 +1069,10 @@ class Painter:
         self._ui_drawn = None
         self.show_powers = True
         self.window_mode = False          # en la ventana se actúa; el fondo de pantalla es solo para mirar
-        self.view = {"status": True, "realms": False, "chron": True}   # paneles a la vista en la ventana
+        self.view = {"status": True, "realms": False, "chron": True, "labels": True}   # paneles a la vista en la ventana
+        self.show_labels = False           # en el fondo de pantalla ([render] labels)
+        self.ui_ratio = 1.0                # escala del mundo / escala de la interfaz (lo pone la app)
+        self._labels_rects: list = []
         self.mini = False                  # ventana chiquita: sin paneles, cámara director y una tira de noticias
         self.director = {"key": None, "prio": 99, "since": -1e9, "caption": "", "pt": None}
         self.ticker = None
@@ -1309,6 +1312,11 @@ class Painter:
             return cx, cy + TH // 2
 
         cands = []                                         # (prioridad, clave, x, y, leyenda)
+        pin = cur_pin = self.director.get("pin")
+        if pin and now < pin["until"]:                     # lo eligió el usuario (clic en la tira)
+            cands.append((-1, pin["key"], *at(pin["x"], pin["y"]), pin["text"]))
+        elif cur_pin:
+            self.director["pin"] = None
         d = st.get("dragon")
         if d:
             cands.append((0, "dragon", *at(d["x"], d["y"]), self._near_text(d["x"], d["y"])))
@@ -1316,15 +1324,27 @@ class Painter:
             war = next((w for w in (st.get("wars") or {}).values() if {w["a"], w["b"]} == {fa, fb}), None)
             cands.append((1, f"melee:{k}:{fa}:{fb}", (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2,
                           war["name"][:1].upper() + war["name"][1:] if war else ""))
-        tick = st["tick"]
+        tick_f = st["tick"] + (now - getattr(self, "_state_t", now)) / max(0.5, self.interval)
         for e in st.get("expeditions", []):
-            if tick - e["start"] < e["eta"] or e["kind"] not in ("siegecity", "siege", "army", "build"):
-                continue
-            i = e["path"][-1]
-            cands.append((1 if e["kind"] != "build" else 2, f"exp:{e['id']}", *self._center(i),
-                          self._near_text(i % n, i // n)))
-        for e in reversed(st.get("chronicle", [])[-30:]):
-            if "x" in e and wall - e.get("t", 0) < 180 and e.get("k") in _MARKERS and 0 <= e["x"] < n:
+            war = e["kind"] in ("siegecity", "siege", "army")
+            t = tick_f - e["start"]
+            if t >= e["eta"]:                              # trabajando en el destino
+                i = e["path"][-1]
+                x, y = self._center(i)
+            else:                                          # en marcha: la cámara sigue a la cabeza de la columna
+                path = e["path"]
+                pos = min(len(path) - 1.0, t / max(1, e["eta"]) * (len(path) - 1))
+                j = int(pos)
+                (ax, ay), (bx, by) = self._center(path[j]), self._center(path[min(j + 1, len(path) - 1)])
+                x, y = ax + (bx - ax) * (pos - j), ay + (by - ay) * (pos - j)
+                i = path[j]
+            cands.append((1 if war else 2, f"exp:{e['id']}", x, y, self._near_text(i % n, i // n)))
+        if self.burn_px:                                   # incendios
+            bx, by, _ = self.burn_px[0]
+            tx, ty = self.tile_at(bx, by)
+            cands.append((2, f"fire:{tx}:{ty}", bx, by, self._near_text(min(n - 1, max(0, tx)), min(n - 1, max(0, ty)))))
+        for e in reversed(st.get("chronicle", [])[-30:]):  # cualquier suceso reciente con lugar
+            if "x" in e and wall - e.get("t", 0) < 240 and 0 <= e["x"] < n and 0 <= e["y"] < n:
                 cands.append((3, f"ev:{e.get('tick')}:{e.get('k')}", *at(e["x"], e["y"]), e["text"]))
         for f in sorted((f for f in st["factions"] if f.get("alive")), key=lambda f: f["id"]):
             cands.append((5, f"cap:{f['id']}", *at(*f["capital"]), f.get("display") or f.get("realm", "")))
@@ -1810,16 +1830,19 @@ class Painter:
         show_realms = (not self.window_mode or self.view["realms"]) and not self.mini
         show_chron = self.show_chronicle and (self.chron_mode if not self.window_mode else self.view["chron"]) \
             and not self.mini
-        self.ticker = None
+        self.ticker, self._ticker_lines = None, {}
         if self.mini:
-            last = next((e["text"] for e in reversed(st.get("chronicle", []))), "")
             cap_ = self.director.get("caption") or ""
-            rows = [(t, col, None) for t, col in ((cap_, GOLD), (last if last != cap_ else "", TEXT)) if t]
+            rows = [(cap_, GOLD, None)] if cap_ else []
+            recent = [e for e in reversed(st.get("chronicle", [])[-12:]) if "x" in e and e["text"] != cap_][:2]
+            rows += [(e["text"], TEXT, e) for e in recent]
             if rows:
                 wrapped = []
-                for text, col, _ in rows:
-                    lines_ = _wrap(_MEASURE, text, fw - 24)
-                    wrapped += [(ln, col, None) for ln in lines_[:2]]
+                for text, col, e in rows:
+                    for ln in _wrap(_MEASURE, text, fw - 24)[:2]:
+                        if e is not None:
+                            self._ticker_lines[len(wrapped)] = e
+                        wrapped.append((ln, col, None))
                 self.ticker = _panel(wrapped, width=fw - 12)
         m, r, w = st["metrics"], st["resources"], st["weather"]
         act = st.get("activity", {})
@@ -1942,8 +1965,8 @@ class Painter:
 
         add(ui("menu.view"), GOLD, None)
         add(f"  [{'x' if self.mini else ' '}] {ui('menu.mini')}", TEXT, ("mini",))
-        for key in ("status", "realms", "chron"):
-            if not self.mini:
+        for key in ("status", "realms", "chron", "labels"):
+            if not self.mini or key == "labels":
                 add(f"  [{'x' if self.view[key] else ' '}] {ui('menu.' + key)}", TEXT, ("toggle", key))
         if self.show_powers and st.get("powers"):
             add(ui("menu.powers"), GOLD, None)
@@ -2007,6 +2030,21 @@ class Painter:
             if x <= ux < x + w and y <= uy < y + h:
                 return name
         return None
+
+    def ticker_entry_at(self, ux: float, uy: float) -> dict | None:
+        """Suceso de la tira (modo mini) bajo el punto."""
+        r = self._rects.get("ticker")
+        if not r or not (r[0] <= ux < r[0] + r[2] and r[1] <= uy < r[1] + r[3]):
+            return None
+        row = int((uy - r[1] - 3) // 11)               # mismo alto de renglón que los paneles
+        return getattr(self, "_ticker_lines", {}).get(row)
+
+    def director_pin(self, e: dict, now: float):
+        """El usuario eligió un suceso: la cámara va ahí y se queda 25 s."""
+        self.director["pin"] = {"key": f"pin:{e.get('tick')}:{e.get('k')}", "x": e["x"], "y": e["y"],
+                                "text": e["text"], "until": now + 25}
+        self.director["since"] = -1e9
+        self._ui_dirty = True
 
     def chron_entry_at(self, ux: float, uy: float) -> dict | None:
         """Entrada de la crónica del renglón bajo el punto (si tiene lugar en el mapa)."""
@@ -2225,6 +2263,12 @@ class Painter:
                     lines.append((ui("card.hero", name=h["name"], trait=h.get("trait", "")), DIM, None))
             else:
                 title = words("terrain")[st["terrain"][i]]
+            reg = (st.get("region") or [])
+            r = reg[i] if i < len(reg) else -1
+            regions = st.get("regions") or []
+            if 0 <= r < len(regions) and regions[r].get("name"):
+                lines.append((words("region_kinds").get(regions[r]["kind"], "{n}").format(n=regions[r]["name"]),
+                              rgb("#dcd6bc"), None))
             flags = ui("card.flags")
             extra = [flags[g] for g in ("burn", "lava", "ruin", "wall", "road") if st.get(g) and st[g][i]]
             lines.append((ui("card.tile", x=x, y=y) + (f" · {', '.join(extra)}" if extra else ""), DIM, None))
@@ -2305,6 +2349,7 @@ class Painter:
     def _ui_key(self, now: float):
         return (id(self.hud), id(self.chron), id(self.menu_panel), id(self.menu_button), id(self._toast),
                 id(self.dialog_panel), id(self.ticker),
+                (getattr(self, "cam", None), round(self.ui_ratio, 3), id(self.state)) if self._labels_on() else None,
                 id(self.card["surf"]) if self.card else None,
                 round(min(1.0, self.card["until"] - now), 1) if self.card else None)
 
@@ -2331,8 +2376,56 @@ class Painter:
             ctx.set_source_rgba(1, 0.95, 0.5, 0.9)
             ctx.stroke()
 
+    def _labels_on(self) -> bool:
+        return self.view["labels"] if self.window_mode else self.show_labels
+
+    def _draw_labels(self, ctx, fw: int, fh: int):
+        """Nombres sobre el mapa: reinos (en su color, sobre la capital) y regiones
+        (más tenues). Se saltean los que se pisarían con otro."""
+        st = self.state
+        k = self.ui_ratio
+        cam = getattr(self, "cam", (0, 0))
+        placed = []
+
+        def put(text, wx, wy, col, size, bold):
+            ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL,
+                                 cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
+            ctx.set_font_size(size)
+            w = ctx.text_extents(text).x_advance
+            x, y = (wx + cam[0]) * k - w / 2, (wy + cam[1]) * k
+            rect = (x - 2, y - size, w + 4, size + 4)
+            if x + w < 0 or x > fw or y < 0 or y > fh + size or any(
+                    rect[0] < r[0] + r[2] and r[0] < rect[0] + rect[2] and rect[1] < r[1] + r[3] and r[1] < rect[1] + rect[3]
+                    for r in placed):
+                return
+            placed.append(rect)
+            ctx.set_source_rgba(0.05, 0.05, 0.08, 0.75)          # contorno oscuro para leerse sobre cualquier cosa
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                ctx.move_to(int(x) + dx, int(y) + dy)
+                ctx.show_text(text)
+            ctx.set_source_rgb(*col)
+            ctx.move_to(int(x), int(y))
+            ctx.show_text(text)
+
+        _font(ctx, 9)
+        for f in sorted((f for f in st["factions"] if f.get("alive")), key=lambda f: -f.get("tiles", 0)):
+            x, y = f["capital"]
+            cx, cy = self.tile_xy(x, y, self.elev_at(x, y))
+            col = mix(tuple(c / 255 for c in f["color"]), (1, 1, 1), 0.45)
+            put(f.get("realm", f["name"]), cx, cy - 26, col, 10, True)
+        kinds = words("region_kinds")
+        for r in st.get("regions", []):
+            if not r.get("name"):
+                continue
+            x, y = r["c"]
+            cx, cy = self.tile_xy(x, y, self.elev_at(x, y))
+            put(kinds.get(r["kind"], "{n}").format(n=r["name"]), cx, cy + TH, (0.86, 0.84, 0.74), 9, False)
+        ctx.select_font_face(FONT, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+
     def _draw_ui(self, ctx, fw, fh, now):
         self._rects = {}
+        if self._labels_on() and self.state.get("regions") is not None:
+            self._draw_labels(ctx, fw, fh)
         if self.hud:
             ctx.set_source_surface(self.hud, 6, 6)
             ctx.paint()
@@ -2346,6 +2439,7 @@ class Painter:
             ty = fh - self.ticker.get_height() - 6
             ctx.set_source_surface(self.ticker, 6, ty)
             ctx.paint_with_alpha(0.92)
+            self._rects["ticker"] = (6, ty, self.ticker.get_width(), self.ticker.get_height())
         if self.chron and self.chron_buttons:                 # botones de la crónica, sobre su borde derecho
             cx, cy, cw, _ = self._rects["chron"]
             x = cx + cw

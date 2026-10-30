@@ -23,6 +23,7 @@ chico en el medio. Cada instalación tiene su propia isla (semilla al azar).
 import heapq
 import json
 import math
+from collections import deque
 import random
 import re
 import socket
@@ -139,6 +140,7 @@ class World:
             self.expeditions = data.get("expeditions", [])
             self.war_cooldown = data.get("war_cooldown", {})
             self.dragon = data.get("dragon")
+            self.regions, self.region = data.get("regions") or [], data.get("region") or []
             for f in self.factions.values():          # mundos v3: edificios únicos guardados por nombre
                 f["specials"] = {_migrate_special(k): v for k, v in f.get("specials", {}).items()}
         else:
@@ -164,9 +166,12 @@ class World:
             self.expeditions: list[dict] = []
             self.war_cooldown: dict[str, int] = {}
             self.dragon: dict | None = None
+            self.regions, self.region = [], []
             self._say("mundo", "world.born", kingdom=self.kingdom)
         self.era.setdefault("idx", self.lore.era_index(self.era.get("boot") or 0))
         self.land_tiles = sum(1 for t in self.terrain if t in LAND)
+        if not self.regions or len(self.region) != self.n * self.n:
+            self._build_regions()
         self.routes: list[list[int]] = []
         self._anchor_sig = None
         self._struct_tiles: dict[int, dict] = {}
@@ -284,7 +289,10 @@ class World:
             "notables": self.notables if full else [h for h in self.notables if h["alive"]],
             "wars": self.wars, "visitors": self.visitors, "power_log": self.power_log[-5:],
             "expeditions": self.expeditions, "war_cooldown": self.war_cooldown, "dragon": self.dragon,
+            "regions": self.regions,
         }
+        if full:
+            d["region"] = self.region
         for g in GRIDS:
             d[g] = getattr(self, g)
         return d
@@ -297,6 +305,7 @@ class World:
         d["activity"] = self.activity
         d["era_name"] = self.lore.era_name(self.era)
         d["powers"] = self.power_costs()
+        d["region"] = self.region
         return d
 
     def power_costs(self) -> dict[str, dict]:
@@ -338,6 +347,62 @@ class World:
         self._update_resources(snap, dt)
         self._refresh_names()
         return events
+
+    def _build_regions(self):
+        """Divide la isla en regiones fijas con nombre (bosques, montes, colinas,
+        costas, valles): semillas repartidas lejos unas de otras y cada casilla de
+        tierra va a la semilla más cercana caminando por tierra. Se guardan con el
+        mundo, así los nombres no cambian aunque cambie el paisaje."""
+        n = self.n
+        land = [i for i, t in enumerate(self.terrain) if t != WATER]
+        self.regions, self.region = [], [-1] * (n * n)
+        if not land:
+            return
+        rng = random.Random(self.seed ^ 0x5E610)
+        k = max(6, min(18, len(land) // 220))
+        sample = rng.sample(land, min(len(land), 600))
+        seeds = [rng.choice(land)]
+        while len(seeds) < k:
+            seeds.append(max(sample, key=lambda i: min(abs(i % n - s % n) + abs(i // n - s // n) for s in seeds)))
+        q = deque()
+        for r, i in enumerate(seeds):
+            self.region[i] = r
+            q.append(i)
+        while q:
+            i = q.popleft()
+            for j in self.neighbors(i):
+                if self.region[j] < 0 and self.terrain[j] != WATER:
+                    self.region[j] = self.region[i]
+                    q.append(j)
+        for i in land:                                     # islotes sueltos: a la región más cercana
+            if self.region[i] < 0:
+                self.region[i] = min(range(k), key=lambda r: abs(i % n - seeds[r] % n) + abs(i // n - seeds[r] // n))
+        used = set()
+        for r in range(k):
+            tiles = [i for i in land if self.region[i] == r]
+            if not tiles:
+                self.regions.append({"name": "", "kind": "valley", "c": list(self.xy(seeds[r])), "size": 0})
+                continue
+            share = {t: sum(1 for i in tiles if self.terrain[i] == t) / len(tiles) for t in (SAND, FOREST, HILL, MOUNTAIN)}
+            coast = sum(1 for i in tiles if any(self.terrain[j] == WATER for j in self.neighbors(i))) / len(tiles)
+            kind = ("mountains" if share[MOUNTAIN] > 0.3 else "forest" if share[FOREST] > 0.35 else
+                    "hills" if share[HILL] > 0.35 else "coast" if coast > 0.18 or share[SAND] > 0.25 else
+                    "valley" if share[HILL] + share[MOUNTAIN] >= 0.08 else "plains")
+            mx = sum(i % n for i in tiles) / len(tiles)
+            my = sum(i // n for i in tiles) / len(tiles)
+            c = min(tiles, key=lambda i: abs(i % n - mx) + abs(i // n - my))
+            name, extra = self.lore.region(str(r)), 0
+            while name in used:
+                extra += 1
+                name = self.lore.region(f"{r}:{extra}")
+            used.add(name)
+            self.regions.append({"name": name, "kind": kind, "c": list(self.xy(c)), "size": len(tiles)})
+
+    def _place_at(self, i: int) -> str:
+        """Nombre de la región de una casilla (para que la crónica coincida con el mapa)."""
+        r = self.region[i] if 0 <= i < len(self.region) else -1
+        return self.regions[r]["name"] if 0 <= r < len(self.regions) and self.regions[r]["name"] else \
+            self.lore.place(f"lugar:{i}")
 
     def _refresh_names(self):
         """Nombres visibles en el idioma activo (HUD y fichas del renderer)."""
@@ -978,7 +1043,7 @@ class World:
         tiles = [j for j in [i] + [self.idx(x0 + dx, y0 + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
                                    if (dx or dy) and 0 <= x0 + dx < self.n and 0 <= y0 + dy < self.n]
                  if self.terrain[j] in (GRASS, HILL, SAND) and self._wild(j)]
-        place = self.lore.place(f"bosque:{i}")
+        place = self._place_at(i)
         f = self._nearest_realm(i)
         self._launch("plant", f, i, work=2 * len(tiles), n=3, tiles=tiles, place=place)
         self._say("poder", "power.bosque", self.xy(i), place=place)
@@ -1414,7 +1479,7 @@ class World:
         if target is not None:
             self._launch("army", a, target, work=40, n=10, war=key, defender=b["id"])
             self._say("guerra", "exp.army.march", self.xy(target), realm=a["realm"],
-                      place=self.lore.place(f"batalla:{target}"))
+                      place=self._place_at(target))
 
     def _sack_capital(self, att: dict, dfn: dict, events: list[dict]):
         """Saqueo: arde el centro, el tesoro del atacante crece y la corte huye
@@ -1446,7 +1511,7 @@ class World:
                     if self.terrain[i] in LAND and self._wild(i) and self._dist(i, f["capital"]) > 10]
             if wild:
                 i = wild[0]
-                place = self.lore.place(f"lugar:{i}")
+                place = self._place_at(i)
                 self._launch("explore", f, i, work=8, n=3, place=place)
                 self._say("expedicion", "exp.explore.start", self.xy(i), realm=f["realm"], place=place)
         forts = [s for s in self.structures.values() if s.get("alive") and s["kind"] not in NO_SHIELD
@@ -1677,12 +1742,12 @@ class World:
                       a=a["realm"], b=d["realm"], Ruler=cap(ruler))
             self._launch("army", a, lost[0], work=40, n=10, war=key, defender=d["id"])
             self._say("guerra", "exp.army.march", self.xy(lost[0]), realm=a["realm"],
-                      place=self.lore.place(f"batalla:{lost[0]}"))
+                      place=self._place_at(lost[0]))
         war["last"] = self.tick
         war["score"][str(a["id"])] = war["score"].get(str(a["id"]), 0) + len(lost)
         war["front"] = (war["front"] + [list(self.xy(i)) for i in lost])[-12:]
         self._say("guerra", "battle", self.xy(lost[0]), f"battle:{key}", 150,
-                  place=self.lore.place(f"batalla:{lost[0]}"), war=war["name"], a=a["realm"], b=d["realm"],
+                  place=self._place_at(lost[0]), war=war["name"], a=a["realm"], b=d["realm"],
                   n=f"{len(lost)} {words('lands')[len(lost) != 1]}")
 
     # Sociedad: héroes, paz, fe, monumentos, días ------------------------------

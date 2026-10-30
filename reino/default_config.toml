@@ -154,6 +154,7 @@ interactive = false   # el fondo de pantalla es para mirar (los clics pasan al e
                       # true: también muestra fichas al hacer clic. La ventana siempre es interactiva.
 show_chronicle = true
 show_powers = true    # barra de poderes del Soberano
+labels = false        # nombres de reinos y regiones sobre el mapa en el fondo (en la ventana: Menú > Ver)
 hemisphere = "auto"   # estaciones: "norte", "sur" o "auto" (según la zona horaria)
 
 # ---------------------------------------------------------------------------

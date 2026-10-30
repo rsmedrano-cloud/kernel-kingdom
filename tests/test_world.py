@@ -343,6 +343,19 @@ class WorldTest(unittest.TestCase):
         self.world.step(s)
         self.assertLess(self.world.resources["defense"], 2000)
 
+    def test_regions_cover_the_land_and_name_events(self):
+        w = self.world
+        self.assertGreaterEqual(len(w.regions), 6)
+        self.assertTrue(all(w.region[i] >= 0 for i, t in enumerate(w.terrain) if t != WATER))
+        names = [r["name"] for r in w.regions]
+        self.assertEqual(len(names), len(set(names)))                     # sin nombres repetidos
+        i = next(i for i, t in enumerate(w.terrain) if t in LAND)
+        self.assertIn(w._place_at(i), names)
+        saved = w.to_dict()
+        w2 = World(self.world.cfg, data=saved) if "data" in World.__init__.__code__.co_varnames else None
+        if w2:
+            self.assertEqual(w2.regions, w.regions)
+
     def test_lighthouse_is_built_by_workers_over_time(self):
         s = snap(browsers={"chrome": proc(2000)})
         self.run_ticks(30, s)

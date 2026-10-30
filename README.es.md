@@ -103,9 +103,14 @@ El fondo de pantalla es para mirar: los clics pasan al escritorio. Abrí
   Construir lleva gente y tiempo: obreros caminan desde la ciudad más cercana para
   levantar el faro o la maravilla, los druidas plantan el bosque casilla por casilla.
 - **Mientras no estabas**: si volvés a abrir la ventana después de un rato, te resume qué pasó.
+- **Nombres en el mapa**: los reinos sobre su capital y las regiones de la isla
+  (Bosque de Daris, Montes de Zandorholm, Valle de Ralo...). Las regiones son fijas,
+  así que las batallas y expediciones de la crónica pasan en lugares que encontrás en
+  el mapa. Se prenden y apagan en Menú > Ver (`[render] labels = true` para el fondo).
 - **Modo mini** (`m` o Menú > Ver): sin paneles, la cámara viaja sola a donde pasan
-  cosas (el dragón, una batalla, un asedio, una maravilla en obra, el último suceso,
-  o una recorrida tranquila por las capitales) con una tira de noticias abajo.
+  cosas (el dragón, una batalla, un asedio, una columna en marcha, un incendio, una
+  maravilla en obra, lo último que pasó, o una recorrida tranquila por las capitales)
+  con una tira de noticias abajo: tocá un titular y la cámara va ahí.
   Pensado para un rincón de otra pantalla (dejá la ventana flotante).
 - **Timelapse del día** (Menú > Mundo): el mundo guarda una foto de las fronteras
   cada 10 minutos (~2 KB cada una) y arma un GIF con las guerras y migraciones del día.
