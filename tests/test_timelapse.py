@@ -31,10 +31,10 @@ class TimelapseTest(unittest.TestCase):
                 from PIL import Image
             except ImportError:
                 return
-            im = Image.open(out)
-            self.assertEqual(im.n_frames, 3)
-            im.seek(2)
-            im.convert("RGB")                               # decodifica sin errores
+            with Image.open(out) as im:
+                self.assertEqual(im.n_frames, 3)
+                im.seek(2)
+                im.convert("RGB")                           # decodifica sin errores
 
 
 if __name__ == "__main__":

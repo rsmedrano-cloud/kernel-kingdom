@@ -155,7 +155,7 @@ class World:
             self.resources = {"gold": 60.0, "stone": 10.0, "defense": 0.0, "mana": 25.0}
             peaks = [i for i, t in enumerate(self.terrain) if t == MOUNTAIN] or [cells // 2]
             self.volcano = list(self.xy(max(peaks, key=self._peakness)))
-            self.kingdom = self.lore.kingdom(socket.gethostname())
+            self.kingdom = wc.get("kingdom") or self.lore.kingdom(socket.gethostname())
             self.era = {"boot": None, "n": 0}
             self.counters = {"keys": 0, "net_rx": 0.0, "births": 0, "lightning": 0, "conquests": 0}
             self.chronicle = Chronicle([], self.seed)

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .. import cli, config, i18n, paths, story, timelapse
 from ..notify import Notifier
+from .archipelago import Archipelago
 from .inputs import InputActivity
 from .probes import SystemProbe
 from .world import World
@@ -122,6 +123,7 @@ def main():
     if added:
         print(f"kernel-kingdom daemon: {added} entradas de hoy recuperadas para la historia del día", file=sys.stderr)
     notifier = Notifier(cfg)
+    arch = Archipelago(cfg)                                # máquinas remotas (vacío = nada)
     while not stop.is_set():
         t0 = time.monotonic()
         notifier.pump()
@@ -134,7 +136,14 @@ def main():
         for c in [c for c in commands if c.get("action") == "language"]:
             i18n.set_lang(c.get("lang", "auto"))         # lo que pase de ahora en más, en ese idioma
             world._refresh_names()
-        commands = [c for c in commands if c.get("action") != "language"]
+        if any(c.get("action") == "remote_reload" for c in commands):
+            cfg = config.load(args.config)                 # Menú > Máquinas cambió la lista
+            arch.reload(cfg)
+        isle_cmds: dict[str, list] = {}
+        for c in commands:                                 # poderes lanzados sobre una isla
+            if c.get("isle"):
+                isle_cmds.setdefault(str(c["isle"]), []).append(c)
+        commands = [c for c in commands if c.get("action") not in ("language", "remote_reload") and not c.get("isle")]
         events = world.step(snap, commands)
         fresh = world.chronicle.take_fresh()
         story.archive(fresh)                               # historia del día, sin límite de entradas
@@ -144,9 +153,13 @@ def main():
         if today != day:                                   # cambió el día: se escribe el relato de ayer
             story.export(day, world.kingdom, world.lore.era_name(world.era))
             day = today
-        write_atomic(state_path, build_state(world, snap, events, interval))
+        state = build_state(world, snap, events, interval)
+        state["islands"], state["isle"] = arch.summary(), None
+        write_atomic(state_path, state)
+        arch.step(world.tick, interval, isle_cmds, build_state, write_atomic)
         if t0 >= next_save:
             write_atomic(save_path, world.to_dict())
+            arch.save(write_atomic)
             next_save = t0 + cfg["daemon"]["save_every"]
         cost = time.monotonic() - t0
         if args.verbose:
@@ -159,6 +172,7 @@ def main():
             inputs.wait(min(left, 0.5), stop)
 
     write_atomic(save_path, world.to_dict())
+    arch.close(write_atomic)
 
 
 if __name__ == "__main__":

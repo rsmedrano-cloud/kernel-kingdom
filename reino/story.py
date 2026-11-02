@@ -116,6 +116,12 @@ def scrub(text: str) -> str:
     viejas los guardaban tal cual)."""
     text = _IP.sub("…", text)
     words_ = {getpass.getuser()}
+    try:                                                   # usuarios y máquinas del lab ([remote] hosts)
+        from .config import load
+        from .daemon.archipelago import known_scrub_words
+        words_ |= known_scrub_words(load())
+    except Exception:
+        pass
     host = socket.gethostname().split(".")[0]
     if host.lower() not in _COMMON_HOSTS:
         words_.add(host)

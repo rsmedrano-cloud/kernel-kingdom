@@ -7,6 +7,7 @@ consulta reutiliza la conexión abierta en vez de hacer un handshake nuevo.
 """
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -14,12 +15,18 @@ from pathlib import Path
 from . import paths
 
 PROTOCOL = 1
+TARGET = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]{0,31}@[A-Za-z0-9._][A-Za-z0-9._-]{0,252}$")
 MAX_BYTES = 64 * 1024
 OFFLINE_AFTER = 3                      # fallas seguidas para dar la isla por caída
 
 
 class RemoteError(Exception):
     pass
+
+
+def valid_target(t) -> bool:
+    """usuario@máquina, sin espacios ni nada que ssh pueda tomar como opción (-oProxyCommand=...)."""
+    return isinstance(t, str) and bool(TARGET.match(t))
 
 
 def control_dir() -> Path:
@@ -35,6 +42,12 @@ def ssh_command(target: str, key: str, ssh: str = "ssh") -> list[str]:
     return [ssh, "-T",
             "-i", os.path.expanduser(key),
             "-o", "IdentitiesOnly=yes",
+            "-o", "IdentityAgent=none",            # ni las llaves del agente
+            "-o", "PreferredAuthentications=publickey",
+            "-o", "PasswordAuthentication=no",
+            "-o", "KbdInteractiveAuthentication=no",
+            "-o", "HostbasedAuthentication=no",
+            "-o", "GSSAPIAuthentication=no",
             "-o", "BatchMode=yes",                 # nunca preguntar nada: si no hay acceso, falla
             "-o", "ConnectTimeout=6",
             "-o", "ServerAliveInterval=15",
@@ -50,6 +63,12 @@ def ssh_command(target: str, key: str, ssh: str = "ssh") -> list[str]:
 
 def fetch(target: str, key: str, timeout: float = 10.0, ssh: str = "ssh") -> dict:
     """Una consulta. Devuelve el reporte validado o levanta RemoteError."""
+    if not valid_target(target):
+        raise RemoteError("dirección inválida")
+    path = os.path.expanduser(key)
+    if not os.path.isfile(path):
+        # sin esto ssh avisa "not accessible" y sigue con ~/.ssh/id_* (llaves con acceso completo)
+        raise RemoteError("no such identity file")
     try:
         r = subprocess.run(ssh_command(target, key, ssh), stdin=subprocess.DEVNULL, capture_output=True,
                            timeout=timeout)
@@ -60,13 +79,27 @@ def fetch(target: str, key: str, timeout: float = 10.0, ssh: str = "ssh") -> dic
     if r.returncode != 0:
         msg = r.stderr.decode("utf-8", "replace").strip().splitlines()
         raise RemoteError(msg[-1] if msg else f"ssh salió con {r.returncode}")
-    if len(r.stdout) > MAX_BYTES:
-        raise RemoteError("reporte demasiado grande")
     try:
-        data = json.loads(r.stdout.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        raise RemoteError("el reporte no es JSON")
-    return validate(data)
+        if len(r.stdout) > MAX_BYTES:
+            raise RemoteError("reporte demasiado grande")
+        try:
+            data = json.loads(r.stdout.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise RemoteError("el reporte no es JSON")
+        return validate(data)
+    except RemoteError:
+        # Si del otro lado no está el script fijo, la llave entró a algo que no debería:
+        # no dejar viva una conexión maestra reutilizable.
+        close_master(target, key, ssh)
+        raise
+
+
+def close_master(target: str, key: str, ssh: str = "ssh"):
+    cmd = ssh_command(target, key, ssh)
+    try:
+        subprocess.run(cmd[:-1] + ["-O", "exit", target], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 # -- validación ---------------------------------------------------------------------
@@ -197,8 +230,8 @@ class Fleet:
         rc = cfg.get("remote", {})
         self.key = rc.get("key", "~/.ssh/kernel-kingdom")
         self.every = max(5, rc.get("every", 20))
-        self.ssh = ssh
-        self.islands = {t: Island(t) for t in rc.get("hosts", []) if isinstance(t, str) and t}
+        self.ssh = rc.get("ssh", ssh)          # otro binario de ssh (solo para pruebas)
+        self.islands = {t: Island(t) for t in rc.get("hosts", []) if valid_target(t)}
         self.next_at = 0.0
 
     def poll(self, now: float | None = None, force: bool = False) -> bool:
@@ -217,5 +250,4 @@ class Fleet:
     def close(self):
         """Cierra las conexiones maestras de ssh (al apagar el daemon)."""
         for isl in self.islands.values():
-            cmd = ssh_command(isl.target, self.key, self.ssh)
-            subprocess.run(cmd[:-1] + ["-O", "exit", isl.target], capture_output=True, timeout=5)
+            close_master(isl.target, self.key, self.ssh)

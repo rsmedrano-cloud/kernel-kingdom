@@ -142,6 +142,25 @@ the town is looted).
 
 ![night storm](docs/img/night-storm.png)
 
+## Your lab as an archipelago
+
+Other machines (a home server, a Raspberry Pi…) can show up as islands with their
+own realms: heavy apps and big containers become cities, the rest of the containers
+and services become fortresses, CPU brings storms, and a machine that goes down
+leaves its island dark and in ruins. Switch islands with the tabs at the top;
+powers fall on the island you are looking at.
+
+Add them from **Menu > World > Lab machines…** (`user@machine`; it tests the
+connection before adding it). It is read-only and nothing is installed or opened on
+your network by the app:
+
+- The PC connects over SSH with its own key (`~/.ssh/kernel-kingdom`), reusing the
+  connection (ControlMaster). It never sends commands.
+- On each machine that key is restricted in `authorized_keys` to run a single fixed
+  script that prints a JSON report: [protocol and fields](docs/remote-protocol.md).
+- Machine names, users and IPs never reach the map, the chronicle or what you share:
+  each island gets a made-up name; connection errors show a short reason.
+
 ## Zoom
 
 In window mode: mouse wheel zooms toward the cursor, drag pans, double-click

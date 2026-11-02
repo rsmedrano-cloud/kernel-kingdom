@@ -43,3 +43,24 @@ def set_top_level(key: str, value: str):
     else:
         lines.append(line)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def set_in_table(table: str, key: str, value):
+    """Escribe `key = <valor>` dentro de [table] en la config del usuario (crea la
+    tabla si no está). El valor va como TOML: strings, números, bools o listas."""
+    import json
+    path = paths.user_config()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    line = f"{key} = {json.dumps(value, ensure_ascii=False)}"          # JSON de strings/listas es TOML válido
+    start = next((k for k, t in enumerate(lines) if t.strip() == f"[{table}]"), None)
+    if start is None:
+        lines += ["", f"[{table}]", line]
+    else:
+        end = next((k for k in range(start + 1, len(lines)) if lines[k].lstrip().startswith("[")), len(lines))
+        idx = next((k for k in range(start + 1, end) if re.match(rf"\s*{re.escape(key)}\s*=", lines[k])), None)
+        if idx is None:
+            lines.insert(start + 1, line)
+        else:
+            lines[idx] = line
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")

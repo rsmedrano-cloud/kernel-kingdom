@@ -143,6 +143,25 @@ saqueo).
 |---|---|
 | ![menú: qué ver, los poderes del Soberano y las acciones del mundo](docs/img/menu.png) | ![modo mini: cámara automática sobre una ciudad con un dragón y la tira de noticias](docs/img/mini.png) |
 
+## Tu lab como archipiélago
+
+Otras máquinas (un servidor en casa, una Raspberry…) pueden aparecer como islas con
+sus propios reinos: las aplicaciones pesadas y los contenedores grandes son ciudades,
+el resto de los contenedores y los servicios son fortalezas, la CPU trae tormentas, y
+una máquina que se cae deja su isla a oscuras y en ruinas. Se cambia de isla con las
+pestañas de arriba; los poderes caen en la isla que estás mirando.
+
+Se agregan desde **Menú > Mundo > Máquinas del lab…** (`usuario@máquina`; prueba la
+conexión antes de agregarla). Es solo lectura y la app no instala ni abre nada en tu
+red:
+
+- La PC se conecta por SSH con una llave propia (`~/.ssh/kernel-kingdom`),
+  reutilizando la conexión (ControlMaster). Nunca manda comandos.
+- En cada máquina esa llave está restringida en `authorized_keys` a correr un único
+  script fijo que imprime un reporte en JSON: [protocolo y campos](docs/remote-protocol.md).
+- Los nombres de máquina, usuarios e IPs nunca llegan al mapa, la crónica ni a lo que
+  compartís: cada isla tiene un nombre inventado; los errores muestran un motivo corto.
+
 ## Zoom
 
 En modo ventana: rueda = zoom hacia el cursor, arrastrar = mover el mapa, doble

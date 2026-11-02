@@ -106,6 +106,7 @@ class Wallpaper:
         self.pixel_scale = rc["pixel_scale"]
         self.interactive = rc.get("interactive", True)
         self.state_path = Path(args.state)
+        self.home_state_path = self.state_path       # tu isla; las del lab están en islands/<id>.json
         self.painter = Painter(cfg["daemon"]["interval"], rc.get("hemisphere", "auto"))
         self.painter.show_chronicle = rc.get("show_chronicle", True)
         self.painter.show_powers = rc.get("show_powers", True)
@@ -257,6 +258,8 @@ class Wallpaper:
             return
         if region == "menu_btn":                    # abrir / cerrar el menú
             p.toggle_menu()
+        elif region and region.startswith("isle:"):  # pestañas: tu isla o una del lab
+            self._switch_isle(None if region == "isle:home" else region[5:], now)
         elif region == "ticker":                    # modo mini: clic en una noticia -> la cámara va ahí
             entry = p.ticker_entry_at(ux, uy)
             if entry:
@@ -312,6 +315,9 @@ class Wallpaper:
         elif action[0] == "timelapse":
             p.toggle_menu(False)
             self._export_timelapse()
+        elif action[0] == "machines":
+            p.toggle_menu(False)
+            self._open_machines()
         elif action[0] == "mini":
             p.toggle_menu(False)
             self._set_mini(not p.mini)
@@ -319,6 +325,8 @@ class Wallpaper:
             self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
             self.win.close()                        # el daemon (el mundo) sigue corriendo aparte
+        elif action[0] == "new_world" and p.isle:
+            p.toast(ui("isle.home_only"), now, ok=False)
         elif action[0] == "new_world":
             if p.confirm_new_until > now:           # segundo clic: confirmado
                 p.confirm_new_until = 0
@@ -410,6 +418,130 @@ class Wallpaper:
         compositor en mosaico el tamaño lo decide él): queda como tamaño para la próxima
         vez que se abra. Abrir en mini sí arranca chiquita."""
         self.win.set_default_size(w, h)
+
+    # -- islas del lab -------------------------------------------------------------
+
+    @staticmethod
+    def _isle_path(iid: str) -> Path:
+        return paths.state_file().parent / "islands" / f"{iid}.json"
+
+    def _switch_isle(self, iid: str | None, now: float):
+        """Mirar otra isla: cambia el estado que se lee; el resto de la ventana sigue igual."""
+        p = self.painter
+        if iid == p.isle:
+            return
+        if iid is not None and not self._isle_path(iid).exists():
+            info = next((i for i in (p.state or {}).get("islands", []) if i["id"] == iid), {})
+            p.toast(ui("isle.notyet", reason=ui("isle.reason." + (info.get("reason") or "waiting"))), now, ok=False)
+            self._render()
+            return
+        p.isle = iid
+        self.state_path = self._isle_path(iid) if iid else self.home_state_path
+        self._mtime = None
+        self.zoom = 0
+        p.pan = [0.0, 0.0]
+        p.card = None
+        p.select_power(None)
+        p.director.update(key=None, since=-1e9, pin=None)
+        p._ui_dirty = True
+        self._poll_state()
+        self._render()
+
+    def _open_machines(self):
+        """Ventana simple para sumar o quitar máquinas del lab. La dirección solo se
+        guarda en tu config; en el mapa cada isla tiene un nombre inventado."""
+        from .. import config
+        from .. import remote
+        from ..daemon.archipelago import island_id, island_name, reason
+
+        cfg = config.load()
+        key = cfg.get("remote", {}).get("key", "~/.ssh/kernel-kingdom")
+        dlg = Gtk.Window(title=ui("machines.title"), transient_for=self.win, modal=True)
+        dlg.set_default_size(560, 420)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(16)
+        dlg.set_child(box)
+        intro = Gtk.Label(label=ui("machines.intro", path=key), wrap=True, xalign=0)
+        box.append(intro)
+        if not os.path.exists(os.path.expanduser(key)):
+            warn = Gtk.Label(label=ui("machines.nokey", path=key), wrap=True, xalign=0)
+            warn.add_css_class("error")
+            box.append(warn)
+        listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        scroller = Gtk.ScrolledWindow(vexpand=True)
+        scroller.set_child(listbox)
+        box.append(scroller)
+        status = Gtk.Label(label="", wrap=True, xalign=0)
+        row = Gtk.Box(spacing=8)
+        entry = Gtk.Entry(placeholder_text=ui("machines.placeholder"), hexpand=True)
+        add = Gtk.Button(label=ui("machines.add"))
+        row.append(entry)
+        row.append(add)
+        box.append(row)
+        box.append(status)
+
+        def hosts() -> list[str]:
+            return [t for t in config.load().get("remote", {}).get("hosts", []) if remote.valid_target(t)]
+
+        def save(new_hosts: list[str]):
+            config.set_in_table("remote", "hosts", new_hosts)
+            self._send_command({"action": "remote_reload"})
+
+        def refresh():
+            while (child := listbox.get_first_child()) is not None:
+                listbox.remove(child)
+            info = {i["id"]: i for i in (self.painter.state or {}).get("islands", [])}
+            for t in hosts():
+                iid = island_id(t)
+                i = info.get(iid, {})
+                state = ui("machines.online") if i.get("online") else ui("isle.reason." + (i.get("reason") or "waiting"))
+                line = Gtk.Box(spacing=8)
+                for side in ("top", "bottom", "start", "end"):
+                    getattr(line, f"set_margin_{side}")(4)
+                line.append(Gtk.Label(label=t, xalign=0, hexpand=True))
+                line.append(Gtk.Label(label=f"{island_name(cfg, iid)} · {state}", xalign=1))
+                rm = Gtk.Button(label=ui("machines.remove"))
+                rm.connect("clicked", lambda _b, t=t: (save([h for h in hosts() if h != t]), refresh()))
+                line.append(rm)
+                listbox.append(line)
+            if not hosts():
+                listbox.append(Gtk.Label(label=ui("machines.empty"), margin_top=12, margin_bottom=12))
+
+        def on_add(*_):
+            target = entry.get_text().strip()
+            if not remote.valid_target(target):
+                status.set_label(ui("machines.bad"))
+                return
+            if target in hosts():
+                status.set_label(ui("machines.dup"))
+                return
+            status.set_label(ui("machines.testing"))
+            add.set_sensitive(False)
+            import threading
+
+            def work():
+                try:
+                    rep = remote.fetch(target, key)
+                    msg, ok = ui("machines.ok", groups=len(rep["groups"]), containers=len(rep["containers"])), True
+                except remote.RemoteError as e:
+                    msg, ok = ui("machines.fail", reason=ui("isle.reason." + reason(str(e)))), False
+                GLib.idle_add(done, msg, ok)
+
+            def done(msg, ok):
+                add.set_sensitive(True)
+                status.set_label(msg)
+                if ok:
+                    save(hosts() + [target])
+                    entry.set_text("")
+                    refresh()
+                return GLib.SOURCE_REMOVE
+            threading.Thread(target=work, daemon=True).start()
+
+        add.connect("clicked", on_add)
+        entry.connect("activate", on_add)
+        refresh()
+        dlg.present()
 
     def _switch_language(self, now: float):
         """Castellano <-> inglés: queda en la config y el daemon escribe en ese idioma
@@ -588,6 +720,8 @@ class Wallpaper:
 
     def _send_command(self, cmd: dict):
         """Deja un pedido para el daemon (lo procesa en el próximo tick)."""
+        if self.painter.isle and "power" in cmd:
+            cmd = dict(cmd, isle=self.painter.isle)  # el poder cae en la isla que estás mirando
         folder = paths.commands_dir()
         folder.mkdir(parents=True, exist_ok=True)
         name = folder / f"{time.time_ns()}.json"
@@ -775,11 +909,16 @@ class Wallpaper:
         """stat() una vez por segundo: más simple y robusto que inotify con rename."""
         if not self.layered:
             self._check_focus_request()
+        if self.painter.isle and not self.state_path.exists():
+            self._switch_isle(None, time.monotonic())  # esa máquina se quitó de la lista
         try:
             mtime = self.state_path.stat().st_mtime_ns
             if mtime != self._mtime:
                 self._mtime = mtime
-                self.painter.set_state(json.loads(self.state_path.read_text()), time.monotonic())
+                state = json.loads(self.state_path.read_text())
+                if not state.get("isle"):
+                    self.painter.home_name = state.get("kingdom", "")
+                self.painter.set_state(state, time.monotonic())
                 if self._fps == 0 and not self.paused:   # idle_fps = 0: pintar solo al cambiar
                     self._render()
                     self._schedule(self._wanted_fps())

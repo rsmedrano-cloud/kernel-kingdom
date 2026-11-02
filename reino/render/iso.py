@@ -1074,6 +1074,9 @@ class Painter:
         self.ui_ratio = 1.0                # escala del mundo / escala de la interfaz (lo pone la app)
         self._labels_rects: list = []
         self.mini = False                  # ventana chiquita: sin paneles, cámara director y una tira de noticias
+        self.home_name = ""                # nombre de tu isla (para la pestaña, aunque estés mirando otra)
+        self.isle = None                   # None = tu isla; si no, el id de la isla remota que se mira
+        self.isle_tabs = None
         self.director = {"key": None, "prio": 99, "since": -1e9, "caption": "", "pt": None}
         self.ticker = None
         self.menu_open = False
@@ -1929,6 +1932,17 @@ class Painter:
                 title += ui("chron.back", n=self.chron_scroll)
             self.chron = _panel(rows, width=width, title=title)
 
+        self.isle_tabs, self._tab_rects = None, []
+        islands = st.get("islands") or []
+        if self.window_mode and islands:
+            tabs = [(None, self.home_name or st.get("kingdom", ""), True, None)] + \
+                   [(i["id"], i["name"], i["online"], i.get("reason")) for i in islands]
+            self.isle_tabs = []
+            for iid, name, online, why in tabs:
+                mark = "■" if iid == self.isle else ("●" if online else "○")
+                text = f"{mark} {name}" + ("" if online or not why else f" · {ui('isle.reason.' + why)}")
+                col = GOLD if iid == self.isle else (TEXT if online else DIM)
+                self.isle_tabs.append((iid, _panel([(text, col, None)])))
         if self.window_mode:
             self.chron_buttons = [] if self.mini else [("chron_share", _panel([(ui("chron.share"), GOLD, None)])),
                                   ("chron_dl", _panel([(ui("chron.download"), GOLD, None)])),
@@ -1989,6 +2003,7 @@ class Painter:
         add(f"  {ui('menu.share')}", TEXT, ("share",))
         add(f"  {ui('menu.timelapse')}", TEXT, ("timelapse",))
         add(f"  {ui('menu.language')}", TEXT, ("language",))
+        add(f"  {ui('menu.machines')}", TEXT, ("machines",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
         confirming = self.confirm_new_until > time.monotonic()
         add(f"  {ui('menu.new_confirm') if confirming else ui('menu.new')}",
@@ -2352,7 +2367,7 @@ class Painter:
 
     def _ui_key(self, now: float):
         return (id(self.hud), id(self.chron), id(self.menu_panel), id(self.menu_button), id(self._toast),
-                id(self.dialog_panel), id(self.ticker),
+                id(self.dialog_panel), id(self.ticker), id(self.isle_tabs),
                 (getattr(self, "cam", None), round(self.ui_ratio, 3), id(self.state)) if self._labels_on() else None,
                 id(self.card["surf"]) if self.card else None,
                 round(min(1.0, self.card["until"] - now), 1) if self.card else None)
@@ -2481,11 +2496,21 @@ class Painter:
             ctx.set_source_surface(self.dialog_panel, dx, dy)
             ctx.paint()
             self._rects["dialog"] = (dx, dy, dw, dh)
+        hint_y = 8
+        if self.isle_tabs:                                    # pestañas de islas, arriba al centro
+            total = sum(t.get_width() for _, t in self.isle_tabs) + 3 * (len(self.isle_tabs) - 1)
+            x = max(6, (fw - total) // 2)
+            for iid, tab in self.isle_tabs:
+                ctx.set_source_surface(tab, x, 6)
+                ctx.paint()
+                self._rects[f"isle:{iid or 'home'}"] = (x, 6, tab.get_width(), tab.get_height())
+                x += tab.get_width() + 3
+            hint_y = 6 + self.isle_tabs[0][1].get_height() + 4
         hint = self._toast[0] if self._toast else (
             _panel([(ui("powers.pick", power=words("powers")[self.selected_power][0]), GOLD, None)])
             if self.selected_power else None)
         if hint:
-            ctx.set_source_surface(hint, (fw - hint.get_width()) // 2, 8)
+            ctx.set_source_surface(hint, (fw - hint.get_width()) // 2, hint_y)
             ctx.paint()
         if self.card:
             s = self.card["surf"]

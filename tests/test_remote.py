@@ -17,6 +17,8 @@ class RemoteTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": self.tmp.name})
         self.env.start()
+        self.key = str(Path(self.tmp.name) / "kk-test-key")
+        Path(self.key).write_text("llave de prueba")
 
     def tearDown(self):
         self.env.stop()
@@ -54,6 +56,26 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(r["groups"], [{"name": "x", "procs": 1, "rss_mb": 0.0, "cpu_s": 0.0, "started": None}])
         self.assertNotIn("cmdline", r)
 
+    def test_missing_key_never_runs_ssh(self):
+        """Sin la llave propia, ssh caería en ~/.ssh/id_* (acceso completo): no se llama."""
+        marker = Path(self.tmp.name) / "ssh-was-called"
+        fake = self.fake_ssh(f"touch {marker}\necho '{{}}'\n")
+        with self.assertRaises(remote.RemoteError) as err:
+            remote.fetch("kk@servidor1", str(Path(self.tmp.name) / "no-existe"), ssh=fake)
+        self.assertFalse(marker.exists())
+        self.assertIn("identity", str(err.exception))
+
+    def test_non_report_reply_closes_the_master_connection(self):
+        log = Path(self.tmp.name) / "calls"
+        fake = self.fake_ssh(f'echo "$@" >> {log}\necho "bienvenido a bash"\n')
+        with self.assertRaises(remote.RemoteError):
+            remote.fetch("kk@servidor1", self.key, ssh=fake)
+        calls = log.read_text().splitlines()
+        self.assertEqual(len(calls), 2)
+        self.assertIn("-O exit", calls[1])                            # se cerró la conexión maestra
+        for opt in ("IdentityAgent=none", "PasswordAuthentication=no", "PreferredAuthentications=publickey"):
+            self.assertIn(opt, calls[0])
+
     def test_rates_come_from_two_reports(self):
         isl = remote.Island("kk@servidor1")
         a = remote.validate(REPORT)
@@ -73,7 +95,7 @@ class RemoteTest(unittest.TestCase):
 
     def test_fleet_fetches_with_ssh_and_marks_offline(self):
         good = self.fake_ssh("cat <<'EOF'\n" + json.dumps(REPORT) + "\nEOF\n")
-        fleet = remote.Fleet({"remote": {"hosts": ["kk@servidor1"], "every": 20}}, ssh=good)
+        fleet = remote.Fleet({"remote": {"hosts": ["kk@servidor1"], "every": 20, "key": self.key}}, ssh=good)
         self.assertTrue(fleet.poll(now=0))
         self.assertFalse(fleet.poll(now=5))                             # todavía no toca
         isl = fleet.islands["kk@servidor1"]
