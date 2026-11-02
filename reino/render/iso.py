@@ -920,6 +920,29 @@ class Sprites:
         pixels(ctx, sail, color)
         return s, -4, -7
 
+    def _make_warship(self, flip: bool, color: tuple):
+        """Galera de guerra: casco largo, escudos en la borda, remos y vela con el color del reino."""
+        s, ctx = _surface(18, 15)
+        hull = [(2, 10), (3, 11), (15, 11), (16, 10)]
+        pixels(ctx, [(3, 10)], rgb("#5a3d22"), size=(13, 2))
+        pixels(ctx, hull, rgb("#4a3020"))
+        pixels(ctx, [(4, 9)], WOOD, size=(11, 1))
+        pixels(ctx, [(5 + 2 * k, 9) for k in range(5)], shade(color, 0.8), size=(1, 1))     # escudos
+        pixels(ctx, [(4 + 3 * k, 12) for k in range(4)], rgb("#6b4a2b"), size=(1, 2))      # remos
+        pixels(ctx, [(9, 1)], rgb("#3a2a1a"), size=(1, 8))                                    # mástil
+        sail = [(x, y) for y in range(2, 8) for x in range(10, 15 - (y - 2) // 3)] if not flip else \
+               [(x, y) for y in range(2, 8) for x in range(4 + (y - 2) // 3, 9)]
+        pixels(ctx, sail, color)
+        pixels(ctx, [(9, 0)], GOLD, size=(1, 1))
+        if flip:
+            s2, c2 = _surface(18, 15)
+            c2.translate(18, 0)
+            c2.scale(-1, 1)
+            c2.set_source_surface(s, 0, 0)
+            c2.paint()
+            return s2, -9, -11
+        return s, -9, -11
+
     def _make_cloud(self, variant: int):
         rng = random.Random(variant)
         w = 28 + rng.randrange(20)
@@ -2271,7 +2294,7 @@ class Painter:
                 lines.append((f.get("ruler_display", ""), TEXT, tuple(c / 255 for c in f["color"])))
                 if bname:
                     lines.append((ui("card.of", building=bname, realm=f.get("realm", f["name"])), GOLD, None))
-                lines.append((ui("card.proc", name=f["name"], procs=f.get("procs", 0)), DIM, None))
+                lines.append((ui("card.proc", name=f.get("proc") or f["name"], procs=f.get("procs", 0)), DIM, None))
                 lines.append((ui("card.ram", rss=f.get("rss_mb", 0), cpu=f.get("cpu", 0)), DIM, None))
                 lines.append((ui("card.lands", tiles=f.get("tiles", 0), target=f.get("target", 0),
                                  style=words("styles")[f.get("style", 0)]), DIM, None))
@@ -2435,6 +2458,13 @@ class Painter:
             ctx.move_to(int(x), int(y))
             ctx.show_text(text)
 
+        islands = [i for i in st.get("islands") or [] if i.get("c")]
+        if islands:                                        # archipiélago: el nombre de cada isla, grande
+            h = st.get("home_n") or st["w"]
+            for name, (x, y) in [(self.home_name or st.get("kingdom", ""), (h // 2, h // 2))] + \
+                                [(i["name"], i["c"]) for i in islands]:
+                cx, cy = self.tile_xy(x, y, self.elev_at(x, y))
+                put(name.upper(), cx, cy - 40, (1.0, 0.9, 0.6), 13, True)
         _font(ctx, 9)
         for f in sorted((f for f in st["factions"] if f.get("alive")), key=lambda f: -f.get("tiles", 0)):
             x, y = f["capital"]
@@ -2794,6 +2824,26 @@ class Painter:
             if e["kind"] == "plant":
                 col = rgb("#3f8f3a")
             tx, ty = pts[-1]
+            if not working and e.get("naval") and L > 0:      # en el mar: van embarcados
+                lead = walk * L
+                j0 = min(int(lead), L - 1)
+                if WATER in (st["terrain"][path[j0]], st["terrain"][path[j0 + 1]]):
+                    for k in range(3 if e["kind"] in ("army", "siegecity") else 1):
+                        pos = max(0.0, lead - k * 1.6)
+                        j = min(int(pos), L - 1)
+                        if st["terrain"][path[j]] != WATER:
+                            continue
+                        (ax, ay), (bx, by) = pts[j], pts[j + 1]
+                        x, y = ax + (bx - ax) * (pos - j), ay + (by - ay) * (pos - j)
+                        bob = int(now * 1.5 + k) % 2
+                        war = e["kind"] in ("army", "siegecity")
+                        self._put(ctx, ("warship" if war else "boat", bx < ax, col), x, y + 3 + bob)
+                        if war:
+                            heads.extend([(x - 3, y + bob), (x - 1, y + bob), (x + 2, y + bob)])   # tropa en cubierta
+                            mark("spear", (x - 2, y - 3 + bob))
+                        pts_wake = [(x - (5 if bx >= ax else -5) * (q + 1), y + 4 + (q % 2)) for q in range(3)]
+                        pixels(ctx, pts_wake, (0.85, 0.92, 1.0), 0.5, size=(2, 1))              # estela
+                    continue
             for k in range(e["n"]):
                 if working:                                   # rodean el destino
                     ang = k * 2 * math.pi / e["n"] + (now * 0.2 if e["kind"] in ("army", "siege") else 0)

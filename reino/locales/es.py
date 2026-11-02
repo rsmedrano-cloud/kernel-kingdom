@@ -173,6 +173,8 @@ TEXT = {
     "wonder.games": "Juegos en {title}: todo {realm} está de fiesta.",
     "wonder.bloom": "Florecen {title} y {realm} prospera.",
     "wonder.done": ["Los obreros terminaron {title}: {effect}.", "{Title} ya se alza sobre la isla: {effect}."],
+    "isle.rise": ["Del mar emerge una isla nueva: {isle}.", "Los marinos avistan tierra donde antes había mar: la isla de {isle}."],
+    "exp.fleet.sail": ["La flota de {realm} zarpa rumbo a {place}.", "Las naves de {realm} cruzan el mar hacia {place}."],
     "power.fail": "No alcanza: {power} cuesta {cost}.",
     "power.notarget": "{power}: elegí una casilla válida.",
     # -- expediciones: gente que va y hace cosas en el mapa --
@@ -461,7 +463,6 @@ UI = {
     "isle.reason.error": "error de conexión",
     "isle.reason.waiting": "esperando la primera respuesta",
     "isle.notyet": "Esa isla todavía no existe: {reason}.",
-    "isle.home_only": "La isla nueva es solo para tu máquina.",
     "menu.wallpaper": "Fondo de pantalla",
     "toast.wallpaper_on": "Fondo de pantalla activado ({monitors}). Arranca solo con la sesión.",
     "toast.wallpaper_off": "Fondo de pantalla desactivado. El mundo sigue corriendo.",

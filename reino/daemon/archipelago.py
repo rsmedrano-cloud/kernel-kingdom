@@ -1,29 +1,26 @@
-"""Archipiélago: cada máquina remota es una isla con su propio mundo.
+"""Archipiélago: las máquinas del lab como islas de tu mismo mundo.
 
-Un hilo consulta las máquinas por SSH (reino.remote) cada `every` segundos; el
-loop del daemon avanza el mundo de cada isla cada dos ticks con el último reporte
-convertido al mismo formato que el muestreo local (aplicaciones pesadas y
-contenedores grandes -> reinos, los medianos -> aldeas, el resto de los
-contenedores y los servicios -> fortalezas).
+Un hilo consulta las máquinas por SSH (reino.remote) cada `every` segundos; en
+cada tick su último reporte se convierte al formato del muestreo local
+(aplicaciones pesadas y contenedores grandes -> reinos, los medianos -> aldeas,
+el resto de los contenedores y los servicios -> fortalezas) y se suma con el id
+de la isla como prefijo.
 
 Privacidad: la dirección usuario@máquina queda en la config y en este proceso.
 Hacia afuera (estado, mapa, crónica, lo que se comparte) cada isla es un id
 (hash) y un nombre inventado; los errores salen como un motivo corto.
 """
-import copy
 import hashlib
 import json
 import os
+import re
 import threading
 import time
 from pathlib import Path
 
 from .. import paths, remote
 from .lore import Lore
-from .world import World
 
-ISLAND_SIZE = 48
-STEP_EVERY = 2                          # ticks del daemon por paso de cada isla (son más lentas, y baratas)
 
 
 valid_target = remote.valid_target
@@ -54,6 +51,26 @@ def reason(err: str | None) -> str:
     return "error" if e else "waiting"
 
 
+def host_words(target: str, reported_host: str | None = None) -> set[str]:
+    """Lo que identifica a una máquina: usuario, nombre (corto y completo) y el que
+    ella misma reporta. No puede aparecer en ningún nombre del mapa."""
+    user, host = target.split("@", 1)
+    words = {user, host, host.split(".")[0]}
+    if reported_host:
+        words |= {reported_host, reported_host.split(".")[0]}
+    return {w for w in words if len(w) >= 3}
+
+
+def clean_name(name: str, words: set[str]) -> str:
+    """'mihost-webui' -> 'webui' si 'mihost' es el nombre de la máquina."""
+    out = name
+    for w in sorted(words, key=len, reverse=True):
+        out = re.sub(re.escape(w), "", out, flags=re.I)
+    out = re.sub(r"[-_.\s]{2,}", "-", out)
+    out = re.sub(r"^[^A-Za-z0-9]+|[^A-Za-z0-9]+$", "", out)
+    return out or "app"
+
+
 def to_snap(s: dict, dt: float) -> dict:
     """Reporte remoto (ya con tasas) -> el formato que espera World.step()."""
     t = s["t"]
@@ -76,12 +93,18 @@ def to_snap(s: dict, dt: float) -> dict:
         if rss >= 40 and len(apps) < 6 and name not in used:
             apps[name] = e
             used.add(name)
-    for rss, name, e, is_container in items:
-        if is_container and name not in used and len(fortresses) < 8:
+    if not browsers and not apps and items:              # toda isla tiene al menos un reino: el más pesado
+        rss, name, e, _ = items[0]
+        browsers[name] = e
+        used.add(name)
+    for rss, name, e, is_container in items:                # los contenedores más pesados que quedan
+        if is_container and name not in used and len(fortresses) < 4:
             fortresses[f"container:{name}"] = dict(e, kind="container", name=name)
             used.add(name)
-    for sv in s["services"]:
-        if sv["active"] and len(fortresses) < 12:
+    services = 0
+    for sv in s["services"]:                                    # y unos pocos servicios (si no, todo es muralla)
+        if sv["active"] and services < 3:
+            services += 1
             since = sv["since"] or s["boot"] or t
             fortresses[f"daemon:{sv['name']}"] = {"kind": "daemon", "name": sv["name"], "procs": 1, "rss_mb": 0.0,
                                                   "cpu": 0.0, "since": since, "uptime": max(0.0, t - since)}
@@ -102,31 +125,41 @@ def to_snap(s: dict, dt: float) -> dict:
     }
 
 
-def _offline_snap(prev: dict, t: float, dt: float) -> dict:
-    """Máquina caída: sin procesos. Sus reinos se apagan y quedan ruinas."""
-    snap = copy.deepcopy(prev)
-    snap.update(t=t, dt=dt, cpu=0.0, browsers={}, apps={}, fortresses={}, top=[], births=0, procs=0, sessions=[])
-    return snap
-
-
 class Archipelago:
+    """Las máquinas del lab dentro de tu mundo: cada una es una isla del mismo mapa.
+
+    Un hilo las consulta por SSH; en cada tick `merge()` suma sus aplicaciones,
+    contenedores y servicios al muestreo local con el id de la isla como prefijo
+    ('<id>/postgres'), así sus reinos nacen y crecen en su isla y pueden guerrear
+    con los de las otras (por mar). La primera vez que una máquina responde, su
+    isla emerge del mar."""
+
     def __init__(self, cfg: dict):
         self.cfg = cfg
         self.lock = threading.Lock()
         self.fleet = remote.Fleet(self._remote_cfg(cfg))
-        self.worlds: dict[str, World] = {}
-        self.last_snap: dict[str, dict] = {}
         self.stop = threading.Event()
+        self._cleanup_old()
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
+
+    @staticmethod
+    def _cleanup_old():
+        """Las islas como mundos separados (0.4.0 de prueba) ya no se usan."""
+        for d in (paths.data_dir() / "islands", paths.state_file().parent / "islands"):
+            if d.is_dir():
+                for f in d.glob("*.json"):
+                    f.unlink(missing_ok=True)
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
 
     @staticmethod
     def _remote_cfg(cfg: dict) -> dict:
         rc = dict(cfg.get("remote", {}))
         rc["hosts"] = [t for t in rc.get("hosts", []) if valid_target(t)]
         return {"remote": rc}
-
-    # -- consultas (hilo aparte: ssh puede tardar) ------------------------------------
 
     def _poll_loop(self):
         while not self.stop.wait(1.0):
@@ -144,91 +177,106 @@ class Archipelago:
                 if t in new.islands:
                     new.islands[t] = isl
             self.fleet = new
-        keep = {island_id(t) for t in new.islands}
-        for iid in [i for i in self.worlds if i not in keep]:
-            self.worlds.pop(iid)
-            (self._state_dir() / f"{iid}.json").unlink(missing_ok=True)
 
-    # -- mundos ----------------------------------------------------------------------
-
-    @staticmethod
-    def _save_dir() -> Path:
-        d = paths.data_dir() / "islands"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
-    @staticmethod
-    def _state_dir() -> Path:
-        d = paths.state_file().parent / "islands"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-
-    def _world(self, iid: str) -> World:
-        w = self.worlds.get(iid)
-        if w is None:
-            cfg = copy.deepcopy(self.cfg)
-            cfg["world"]["size"] = ISLAND_SIZE
-            cfg["world"]["seed"] = int(iid, 16) & 0x7FFFFFFF
-            cfg["world"]["kingdom"] = island_name(self.cfg, iid)   # nunca el hostname
-            data = None
-            f = self._save_dir() / f"{iid}.json"
-            if f.exists():
-                try:
-                    data = json.loads(f.read_text())
-                except (OSError, ValueError):
-                    data = None
-            w = World(cfg, data)
-            self.worlds[iid] = w
-        return w
-
-    def summary(self) -> list[dict]:
-        out = []
+    def _islands(self):
         with self.lock:
-            islands = list(self.fleet.islands.items())
+            return list(self.fleet.islands.items())
+
+    def merge(self, snap: dict, world, interval: float) -> dict:
+        """Suma las máquinas del lab al muestreo local. Las caídas no aportan nada:
+        sus reinos se apagan y quedan ruinas hasta que vuelvan."""
+        islands = self._islands()
+        if not islands:
+            return snap
+        out = dict(snap, browsers=dict(snap["browsers"]), apps=dict(snap["apps"]),
+                   fortresses=dict(snap["fortresses"]), isles={})
         for t, isl in islands:
             iid = island_id(t)
-            out.append({"id": iid, "name": island_name(self.cfg, iid), "online": isl.online,
-                        "reason": None if isl.online else reason(isl.error), "seen": bool(isl.snap)})
+            if not (isl.online and isl.snap):
+                out["isles"][iid] = {"online": False}
+                continue
+            if iid not in world.isles:
+                world.add_isle(iid, island_name(self.cfg, iid))
+            words = host_words(t, isl.snap.get("host"))
+            self._scrub_world(world, iid, words)
+            r = to_snap(isl.snap, interval)
+            for table in ("browsers", "apps", "fortresses"):
+                for key, g in r[table].items():
+                    kind, _, name = key.rpartition(":")
+                    clean = clean_name(name, words)        # nada del hostname ni del usuario en el mapa
+                    key = f"{kind}:{clean}" if kind else clean
+                    out[table][f"{iid}/{key}"] = dict(g, name=clean) if "name" in g else g
+            out["isles"][iid] = {"online": True, "cpu": r["cpu"]}
         return out
 
-    def step(self, tick: int, interval: float, commands: dict[str, list], build_state, write_atomic):
-        """Avanza las islas (cada STEP_EVERY ticks) y escribe su estado para la ventana."""
-        if tick % STEP_EVERY:
+    def _scrub_world(self, world, iid: str, words: set[str]):
+        """Reinos y fortalezas que se fundaron con un nombre que traía el de la máquina
+        (p.ej. un contenedor 'mihost-webui'): se renombran, y la crónica, el archivo
+        de historias y el timelapse se corrigen. Se revisa una vez por isla y conjunto
+        de palabras."""
+        stamp = (iid, tuple(sorted(words)))
+        if stamp in getattr(self, "_scrubbed", set()):
             return
-        dt = interval * STEP_EVERY
-        summary = self.summary()
-        with self.lock:
-            islands = list(self.fleet.islands.items())
-        for t, isl in islands:
-            iid = island_id(t)
-            if isl.snap is None and iid not in self.worlds and not (self._save_dir() / f"{iid}.json").exists():
-                continue                                # nunca respondió: todavía no hay isla
-            w = self._world(iid)
-            now = time.time()
-            if isl.online and isl.snap:
-                snap = to_snap(isl.snap, dt)
-                snap["t"] = now
-                self.last_snap[iid] = snap
-            elif iid in self.last_snap:
-                snap = _offline_snap(self.last_snap[iid], now, dt)
-            else:
+        self.__dict__.setdefault("_scrubbed", set()).add(stamp)
+        # en los textos, las palabras cortas solo enteras ('nas' no debe comerse 'semanas')
+        pattern = re.compile("|".join(re.escape(w) if len(w) >= 5 else rf"\b{re.escape(w)}\b"
+                                      for w in sorted(words, key=len, reverse=True)), re.I)
+        renames: dict[str, str] = {}
+        for key in [k for k, f in world.factions.items() if f.get("isle") == iid]:
+            f = world.factions[key]
+            proc = f.get("proc") or key.split("/", 1)[-1]
+            if not pattern.search(proc) and not pattern.search(f["realm"]):
                 continue
-            events = w.step(snap, commands.get(iid, []))
-            w.chronicle.take_fresh()
-            state = build_state(w, snap, events, dt)
-            state["islands"], state["isle"] = summary, iid
-            write_atomic(self._state_dir() / f"{iid}.json", state)
+            clean = clean_name(proc, words)
+            new_key = f"{iid}/{clean}"
+            if new_key in world.factions and world.factions[new_key] is not f:
+                new_key = f"{iid}/{clean}~{f['id']}"
+            old_realm = f["realm"]
+            f.update(name=new_key, proc=clean, realm=world.lore.realm(clean))
+            world.factions[new_key] = world.factions.pop(key)
+            renames[old_realm] = f["realm"]
+        for key in [k for k in world.structures if k.startswith(iid + "/") and pattern.search(k)]:
+            st = world.structures.pop(key)
+            kind, _, name = key.split("/", 1)[1].rpartition(":")
+            clean = clean_name(name, words)
+            old_title = st.get("title", "")
+            st.update(key=f"{iid}/{kind}:{clean}", name=clean, title=world.lore.structure_name(st["kind"], clean))
+            world.structures[st["key"]] = st
+            if old_title:
+                renames[old_title] = st["title"]
+        if not renames:
+            return
 
-    def save(self, write_atomic):
-        for iid, w in self.worlds.items():
-            write_atomic(self._save_dir() / f"{iid}.json", w.to_dict())
+        def fix(text: str) -> str:
+            for old, new in renames.items():
+                text = text.replace(old, new)
+            return pattern.sub("…", text)
+        for e in world.chronicle.entries:
+            e["text"] = fix(e["text"])
+        for d in (paths.data_dir() / "chronicle", paths.data_dir() / "timelapse", paths.data_dir() / "stories"):
+            for f in d.glob("*") if d.is_dir() else []:
+                try:
+                    text = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+                fixed = fix(text)
+                if fixed != text:
+                    f.write_text(fixed, encoding="utf-8")
 
-    def close(self, write_atomic):
+    def summary(self, world) -> list[dict]:
+        out = []
+        for t, isl in self._islands():
+            iid = island_id(t)
+            info = world.isles.get(iid, {})
+            out.append({"id": iid, "name": info.get("name") or island_name(self.cfg, iid), "online": isl.online,
+                        "reason": None if isl.online else reason(isl.error), "c": info.get("c")})
+        return out
+
+    def close(self):
         self.stop.set()
-        self.save(write_atomic)
         try:
             self.fleet.close()
-        except (OSError, Exception):
+        except Exception:
             pass
 
 

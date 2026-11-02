@@ -145,11 +145,13 @@ saqueo).
 
 ## Tu lab como archipiélago
 
-Otras máquinas (un servidor en casa, una Raspberry…) pueden aparecer como islas con
-sus propios reinos: las aplicaciones pesadas y los contenedores grandes son ciudades,
-el resto de los contenedores y los servicios son fortalezas, la CPU trae tormentas, y
-una máquina que se cae deja su isla a oscuras y en ruinas. Se cambia de isla con las
-pestañas de arriba; los poderes caen en la isla que estás mirando.
+Otras máquinas (un servidor en casa, una Raspberry…) emergen del mar como islas del
+mismo mapa, alrededor de la tuya: las aplicaciones pesadas y los contenedores grandes
+son ciudades, algunos contenedores y servicios más son fortalezas, la CPU de cada
+máquina trae tormentas a su isla, y una máquina que se cae deja su isla en ruinas. Los
+reinos de distintas máquinas **se hacen la guerra por mar**: zarpan galeras, desembarcan
+en la costa enemiga y avanzan peleando. Con zoom y arrastre navegás el archipiélago; las
+pestañas de arriba llevan la cámara a cada isla.
 
 Se agregan desde **Menú > Mundo > Máquinas del lab…** (`usuario@máquina`; prueba la
 conexión antes de agregarla). Es solo lectura y la app no instala ni abre nada en tu
@@ -160,7 +162,9 @@ red:
 - En cada máquina esa llave está restringida en `authorized_keys` a correr un único
   script fijo que imprime un reporte en JSON: [protocolo y campos](docs/remote-protocol.md).
 - Los nombres de máquina, usuarios e IPs nunca llegan al mapa, la crónica ni a lo que
-  compartís: cada isla tiene un nombre inventado; los errores muestran un motivo corto.
+  compartís: cada isla tiene un nombre inventado, un contenedor o proceso que lleva el
+  nombre de la máquina se renombra (`mihost-webui` → `webui`) y los errores muestran un
+  motivo corto.
 
 ## Zoom
 

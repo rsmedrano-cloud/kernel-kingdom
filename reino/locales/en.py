@@ -167,6 +167,8 @@ TEXT = {
     "wonder.games": "Games at {title}: all of {realm} celebrates.",
     "wonder.bloom": "{title} bloom and {realm} prospers.",
     "wonder.done": ["The workers finished {title}: {effect}.", "{Title} now rises over the island: {effect}."],
+    "isle.rise": ["A new island rises from the sea: {isle}.", "Sailors sight land where there was only sea: the island of {isle}."],
+    "exp.fleet.sail": ["The fleet of {realm} sets sail for {place}.", "The ships of {realm} cross the sea towards {place}."],
     "power.fail": "Not enough: {power} costs {cost}.",
     "power.notarget": "{power}: pick a valid tile.",
     # -- expediciones: gente que va y hace cosas en el mapa --
@@ -450,7 +452,6 @@ UI = {
     "isle.reason.error": "connection error",
     "isle.reason.waiting": "waiting for the first response",
     "isle.notyet": "That island doesn't exist yet: {reason}.",
-    "isle.home_only": "A new island is only for your own machine.",
     "menu.wallpaper": "Wallpaper",
     "toast.wallpaper_on": "Wallpaper on ({monitors}). It starts with your session.",
     "toast.wallpaper_off": "Wallpaper off. The world keeps running.",

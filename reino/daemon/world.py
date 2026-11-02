@@ -28,6 +28,7 @@ import random
 import re
 import socket
 import time
+import zlib
 from pathlib import Path
 
 from .. import buildings as B
@@ -45,6 +46,7 @@ POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "d
           "maravilla", "dragon", "murallas", "tregua")
 NO_SHIELD = {"tower", "mine", "lighthouse", "embassy", "wonder"}
 WONDERS = ("coloso", "coliseo", "observatorio", "jardines")
+ISLE_SIZE = 36                 # lado de la isla de una máquina remota (la tuya mide [world] size)
 
 
 def _value_noise(n: int, rng: random.Random, cell: float) -> list[float]:
@@ -110,14 +112,20 @@ def generate_terrain(n: int, aspect: float, seed: int) -> list[int]:
     return terrain
 
 
+def zlib_crc(text: str) -> int:
+    return zlib.crc32(text.encode()) if text else 0
+
+
 class World:
     def __init__(self, cfg: dict, data: dict | None = None):
         self.cfg = cfg
         wc = cfg["world"]
         self.n = self.w = self.h = wc["size"]
         self.rng = random.Random()
-        ok = bool(data) and data.get("v") in (2, 3, SAVE_VERSION) and data["w"] == self.n \
-            and data.get("aspect") == wc["aspect"]
+        ok = bool(data) and data.get("v") in (2, 3, SAVE_VERSION) \
+            and (data["w"] == self.n or data.get("home_n") == self.n) and data.get("aspect") == wc["aspect"]
+        if ok:
+            self.n = self.w = self.h = data["w"]          # con islas del lab la grilla es más grande
         # semilla: la guardada; si no, la de la config; 0 = una al azar (cada instalación, su isla)
         self.seed = data.get("seed", 1337) if ok else (wc.get("seed") or random.randrange(1, 2 ** 31))
         self.lore = Lore(cfg, self.seed)
@@ -141,6 +149,7 @@ class World:
             self.war_cooldown = data.get("war_cooldown", {})
             self.dragon = data.get("dragon")
             self.regions, self.region = data.get("regions") or [], data.get("region") or []
+            self.isles, self.home_n = data.get("isles") or {}, data.get("home_n") or self.n
             for f in self.factions.values():          # mundos v3: edificios únicos guardados por nombre
                 f["specials"] = {_migrate_special(k): v for k, v in f.get("specials", {}).items()}
         else:
@@ -167,11 +176,18 @@ class World:
             self.war_cooldown: dict[str, int] = {}
             self.dragon: dict | None = None
             self.regions, self.region = [], []
+            self.isles, self.home_n = {}, self.n
             self._say("mundo", "world.born", kingdom=self.kingdom)
         self.era.setdefault("idx", self.lore.era_index(self.era.get("boot") or 0))
         self.land_tiles = sum(1 for t in self.terrain if t in LAND)
         if not self.regions or len(self.region) != self.n * self.n:
             self._build_regions()
+        self._isle_grid()
+        seen = set()                                       # mundos guardados con reinos de nombre repetido
+        for f in sorted(self.factions.values(), key=lambda f: f["id"]):
+            if f["realm"] in seen:
+                f["realm"] = self._unique_realm(f.get("proc") or f["name"], f["name"])
+            seen.add(f["realm"])
         self.routes: list[list[int]] = []
         self._anchor_sig = None
         self._struct_tiles: dict[int, dict] = {}
@@ -183,8 +199,7 @@ class World:
         self.weather = {"storm": 0.0, "eruption": False, "fog": False, "heat": False,
                         "plague": False, "rain": False, "culprit": None}
         self.activity = {}
-        rng = rng_for(self.seed, "tiles")
-        self._tile_rand = [rng.random() for _ in range(self.n * self.n)]   # azar fijo por casilla
+        self._make_tile_rand()
         self._ensure_mine()
 
     # -- utilidades ----------------------------------------------------------
@@ -217,20 +232,25 @@ class World:
         return not (self.owner[i] or self.road[i] or self.wall[i] or self.burn[i] or self.lava[i]
                     or self.ruin[i] or i in self._struct_tiles)
 
-    def _place(self, key: str, prefer_hill: bool, coastal: bool = False, avoid=None) -> list[int]:
+    def _place(self, key: str, prefer_hill: bool, coastal: bool = False, avoid=None,
+               isle: str | None = None) -> list[int]:
         """Ubicación determinista (misma clave -> mismo lugar) lejos de los demás.
-        `avoid`: un punto del que hay que alejarse (las ruinas de una capital vieja)."""
+        `avoid`: un punto del que hay que alejarse (las ruinas de una capital vieja).
+        `isle`: en qué isla (None = la tuya; si no, el id de una máquina del lab)."""
         rng = rng_for(self.seed, key)
         taken = [f["capital"] for f in self.factions.values()]
         taken += [[s["x"], s["y"]] for s in self.structures.values()]
+        tile_isle = self._tile_isle
         land = [i for i, t in enumerate(self.terrain)
-                if t in LAND and not self.wall[i] and i not in self._struct_tiles and not self.owner[i]
-                and not self.ruin[i] and (not coastal or any(self.terrain[j] == WATER for j in self.neighbors(i)))]
+                if t in LAND and tile_isle[i] == isle and not self.wall[i] and i not in self._struct_tiles
+                and not self.owner[i] and not self.ruin[i]
+                and (not coastal or any(self.terrain[j] == WATER for j in self.neighbors(i)))]
         if avoid:
             far = [i for i in land if self._dist(i, avoid) >= 14]
             land = far or land
         if not land:
-            land = [i for i, t in enumerate(self.terrain) if t in LAND]
+            land = [i for i, t in enumerate(self.terrain) if t in LAND and tile_isle[i] == isle] or \
+                   [i for i, t in enumerate(self.terrain) if t in LAND]
         best, best_score = land[0], -1.0
         for i in rng.sample(land, min(80, len(land))):
             spread = min((self._dist(i, p) for p in taken), default=14.0)
@@ -258,7 +278,7 @@ class World:
         ruler = self.lore.ruler_str(f["ruler"])
         full = self.lore.the_full(f)
         return {"realm": f["realm"], "the_full": full, "The_full": cap(full), "ruler": ruler, "Ruler": cap(ruler),
-                "name": f["name"]}
+                "name": f.get("proc") or f["name"]}
 
     @staticmethod
     def _fort_kw(title: str) -> dict:
@@ -289,7 +309,7 @@ class World:
             "notables": self.notables if full else [h for h in self.notables if h["alive"]],
             "wars": self.wars, "visitors": self.visitors, "power_log": self.power_log[-5:],
             "expeditions": self.expeditions, "war_cooldown": self.war_cooldown, "dragon": self.dragon,
-            "regions": self.regions,
+            "regions": self.regions, "isles": self.isles, "home_n": self.home_n,
         }
         if full:
             d["region"] = self.region
@@ -335,6 +355,7 @@ class World:
         self._dragon_step(events)
         self._expeditions(events)
         self._weather_effects(snap, events)
+        self._isle_storms(snap, events)
         self._nature()
         self._economy_events(snap, dt)
         self._society(snap)
@@ -348,38 +369,161 @@ class World:
         self._refresh_names()
         return events
 
-    def _build_regions(self):
+    # -- archipiélago: islas de las máquinas del lab -----------------------------------
+
+    def _make_tile_rand(self):
+        """Azar fijo por casilla. El de tu isla sale igual que siempre aunque la grilla
+        haya crecido por las islas del lab (si no, cambiarían las casas al reiniciar)."""
+        n, h = self.n, getattr(self, "home_n", self.n)
+        rng = rng_for(self.seed, "tiles")
+        home = [rng.random() for _ in range(h * h)]
+        if n == h:
+            self._tile_rand = home
+            return
+        rest = rng_for(self.seed, "tiles:mar")
+        rand = [rest.random() for _ in range(n * n)]
+        for i, v in enumerate(home):
+            rand[(i // h) * n + (i % h)] = v
+        self._tile_rand = rand
+
+    def _unique_realm(self, proc: str, key: str) -> str:
+        """Nombre de reino que no repita el de otro (immich_server e immich_postgres
+        darían los dos 'Immichhar')."""
+        used = {f["realm"] for f in self.factions.values() if f["name"] != key}
+        realm = self.lore.realm(proc)
+        for k in range(1, 12):
+            if realm not in used:
+                return realm
+            realm = self.lore.realm(f"{proc}#{k}")
+        return f"{realm} {k}"
+
+    def split_key(self, key: str) -> tuple[str | None, str]:
+        """'<id de isla>/<nombre>' -> (isla, nombre). Sin prefijo (o prefijo desconocido): tu isla."""
+        if "/" in key:
+            head, rest = key.split("/", 1)
+            if head in self.isles:
+                return head, rest
+        return None, key
+
+    def _slots(self) -> list[tuple[int, int]]:
+        """Lugares fijos para las islas, en el mar alrededor de la tuya (a la derecha y abajo,
+        para no mover nada de lo que ya existe al agrandar la grilla)."""
+        h, s = self.home_n, ISLE_SIZE
+        return [(h + 8, 0), (h + 8, s + 6), (h + 8, 2 * s + 12), (s + 6, h + 8), (0, h + 8)]
+
+    def _isle_grid(self):
+        """Para cada casilla: None (tu isla), el id de una isla del lab, o '' (mar abierto)."""
+        n, h = self.n, self.home_n
+        grid = [None if (i % n) < h and (i // n) < h else "" for i in range(n * n)]
+        for iid, info in self.isles.items():
+            x0, y0 = info["slot"]
+            for y in range(y0, min(n, y0 + ISLE_SIZE)):
+                for x in range(x0, min(n, x0 + ISLE_SIZE)):
+                    grid[y * n + x] = iid
+        self._tile_isle = grid
+
+    def expand(self, size: int):
+        """Agranda la grilla hacia el mar (derecha y abajo). Las coordenadas (x, y) no
+        cambian; los índices de casilla guardados se reubican."""
+        n = self.n
+        if size <= n:
+            return
+
+        def m(i: int) -> int:
+            return (i // n) * size + (i % n)
+        for g in GRIDS:
+            old, new = getattr(self, g), [0] * (size * size)
+            for i, v in enumerate(old):
+                new[m(i)] = v
+            setattr(self, g, new)
+        region = [-1] * (size * size)
+        for i, v in enumerate(self.region):
+            region[m(i)] = v
+        self.region = region
+        for f in self.factions.values():
+            f["specials"] = {k: m(v) if isinstance(v, int) else v for k, v in f.get("specials", {}).items()}
+        for e in self.expeditions:
+            e["path"] = [m(i) for i in e["path"]]
+            if "tiles" in e["data"]:
+                e["data"]["tiles"] = [m(i) for i in e["data"]["tiles"]]
+        self.n = self.w = self.h = size
+        self.routes = []
+        self._struct_tiles = {}
+        if hasattr(self, "_road_noise"):
+            del self._road_noise
+        self._make_tile_rand()
+        self._isle_grid()
+
+    def add_isle(self, iid: str, name: str) -> bool:
+        """Una máquina del lab respondió por primera vez: emerge su isla del mar."""
+        if iid in self.isles:
+            return False
+        used = {tuple(info["slot"]) for info in self.isles.values()}
+        free = [s for s in self._slots() if s not in used]
+        if not free:
+            return False
+        x0, y0 = free[0]
+        need = max(self.n, x0 + ISLE_SIZE + 4, y0 + ISLE_SIZE + 4)
+        self.expand(need)
+        self.isles[iid] = {"slot": [x0, y0], "name": name, "since": self.tick}
+        self._isle_grid()
+        terrain = generate_terrain(ISLE_SIZE, 1.3, int(iid, 16) & 0x7FFFFFFF)
+        tiles = []
+        for k, t in enumerate(terrain):
+            if t == WATER:
+                continue
+            i = self.idx(x0 + k % ISLE_SIZE, y0 + k // ISLE_SIZE)
+            self.terrain[i] = t
+            tiles.append(i)
+        self.land_tiles = sum(1 for t in self.terrain if t in LAND)
+        self._build_regions(tiles, key=iid)
+        c = min(tiles, key=lambda i: abs(i % self.n - x0 - ISLE_SIZE / 2) + abs(i // self.n - y0 - ISLE_SIZE / 2))
+        self.isles[iid]["c"] = list(self.xy(c))
+        self._say("mundo", "isle.rise", self.xy(c), isle=name)
+        return True
+
+    def isle_summary(self) -> dict:
+        return {iid: {"name": info["name"], "c": info.get("c")} for iid, info in self.isles.items()}
+
+    def _build_regions(self, subset: list[int] | None = None, key: str = ""):
         """Divide la isla en regiones fijas con nombre (bosques, montes, colinas,
         costas, valles): semillas repartidas lejos unas de otras y cada casilla de
         tierra va a la semilla más cercana caminando por tierra. Se guardan con el
-        mundo, así los nombres no cambian aunque cambie el paisaje."""
+        mundo, así los nombres no cambian aunque cambie el paisaje. Con `subset`
+        (las casillas de una isla nueva) se agregan regiones solo para esa isla."""
         n = self.n
-        land = [i for i, t in enumerate(self.terrain) if t != WATER]
-        self.regions, self.region = [], [-1] * (n * n)
+        if subset is None:
+            land = [i for i, t in enumerate(self.terrain) if t != WATER]
+            self.regions, self.region = [], [-1] * (n * n)
+            k = max(6, min(18, len(land) // 220))
+        else:
+            land = list(subset)
+            k = max(2, min(5, len(land) // 220))
         if not land:
             return
-        rng = random.Random(self.seed ^ 0x5E610)
-        k = max(6, min(18, len(land) // 220))
+        inside = set(land)
+        base = len(self.regions)
+        rng = random.Random((self.seed ^ 0x5E610) + zlib_crc(key))
         sample = rng.sample(land, min(len(land), 600))
         seeds = [rng.choice(land)]
         while len(seeds) < k:
             seeds.append(max(sample, key=lambda i: min(abs(i % n - s % n) + abs(i // n - s // n) for s in seeds)))
         q = deque()
         for r, i in enumerate(seeds):
-            self.region[i] = r
+            self.region[i] = base + r
             q.append(i)
         while q:
             i = q.popleft()
             for j in self.neighbors(i):
-                if self.region[j] < 0 and self.terrain[j] != WATER:
+                if self.region[j] < 0 and j in inside:
                     self.region[j] = self.region[i]
                     q.append(j)
         for i in land:                                     # islotes sueltos: a la región más cercana
             if self.region[i] < 0:
-                self.region[i] = min(range(k), key=lambda r: abs(i % n - seeds[r] % n) + abs(i // n - seeds[r] // n))
-        used = set()
+                self.region[i] = base + min(range(k), key=lambda r: abs(i % n - seeds[r] % n) + abs(i // n - seeds[r] // n))
+        used = {r["name"] for r in self.regions}
         for r in range(k):
-            tiles = [i for i in land if self.region[i] == r]
+            tiles = [i for i in land if self.region[i] == base + r]
             if not tiles:
                 self.regions.append({"name": "", "kind": "valley", "c": list(self.xy(seeds[r])), "size": 0})
                 continue
@@ -391,10 +535,10 @@ class World:
             mx = sum(i % n for i in tiles) / len(tiles)
             my = sum(i // n for i in tiles) / len(tiles)
             c = min(tiles, key=lambda i: abs(i % n - mx) + abs(i // n - my))
-            name, extra = self.lore.region(str(r)), 0
+            name, extra = self.lore.region(f"{key}{r}" if key else str(r)), 0
             while name in used:
                 extra += 1
-                name = self.lore.region(f"{r}:{extra}")
+                name = self.lore.region(f"{key}{r}:{extra}")
             used.add(name)
             self.regions.append({"name": name, "kind": kind, "c": list(self.xy(c)), "size": len(tiles)})
 
@@ -480,29 +624,36 @@ class World:
         present = {name: ("browser", g) for name, g in snap["browsers"].items()}
         ac = self.cfg["apps"]
         alive_apps = [n for n, f in self.factions.items() if f.get("kind") == "app" and f["alive"]]
-        slots = ac["max"] - sum(1 for n in alive_apps if n in snap["apps"])
+        slots: dict = {}                          # cada isla tiene sus propios cupos de aldeas
+        for name in snap["apps"]:
+            isle = self.split_key(name)[0]
+            slots.setdefault(isle, ac["max"] - sum(1 for n in alive_apps if n in snap["apps"]
+                                                   and self.split_key(n)[0] == isle))
         for name, g in snap["apps"].items():
             f = self.factions.get(name)
+            isle = self.split_key(name)[0]
             if f and f["alive"]:
                 present[name] = ("app", g)        # ya fundada: se queda mientras esté en la lista
-            elif g["rss_mb"] >= ac["min_rss_mb"] and slots > 0:
+            elif g["rss_mb"] >= (ac["min_rss_mb"] if isle is None else min(ac["min_rss_mb"], 40)) and slots[isle] > 0:
+                # en los servidores todo pesa menos: ahí una aldea arranca en 40 MB
                 present[name] = ("app", g)
-                slots -= 1
+                slots[isle] -= 1
         return present
 
     def _new_faction(self, name: str, kind: str, g: dict) -> dict:
         rng = rng_for(self.seed, name)
         colors = self.cfg.get("colors", {})
         landmarks = self.cfg["apps"].get("landmarks", {})
+        isle, proc = self.split_key(name)
         f = {
             "id": max((f["id"] for f in self.factions.values()), default=0) + 1,
-            "name": name, "kind": kind,
-            "color": colors.get(name) or [rng.randrange(70, 230) for _ in range(3)],
-            "capital": self._place(f"{kind}:{name}", prefer_hill=False),
+            "name": name, "kind": kind, "isle": isle, "proc": proc,
+            "color": colors.get(proc) or [rng.randrange(70, 230) for _ in range(3)],
+            "capital": self._place(f"{kind}:{name}", prefer_hill=False, isle=isle),
             "style": 4 if kind == "app" else rng.randrange(4),
             "material": rng.randrange(5),
-            "landmark": (landmarks.get(name) or rng.choice(LANDMARKS)) if kind == "app" else None,
-            "realm": self.lore.realm(name),
+            "landmark": (landmarks.get(proc) or rng.choice(LANDMARKS)) if kind == "app" else None,
+            "realm": self._unique_realm(proc, name),
             "since": g["since"], "founded": self.tick, "peak": 0, "dynasty": 0, "tiles": 0,
         }
         f["ruler"] = self.lore.new_ruler(f, g.get("since") or 0.0)
@@ -521,7 +672,7 @@ class World:
                 f = self._new_faction(name, kind, g)
                 f["alive"] = True
                 if kind == "app":
-                    self._say("fundacion", "found.app", f["capital"], name=name, realm=f["realm"],
+                    self._say("fundacion", "found.app", f["capital"], name=f["proc"], realm=f["realm"],
                               landmark=landmark_name(f["landmark"]))
                 else:
                     self._say("fundacion", "found.realm", f["capital"], **self._realm_kw(f))
@@ -613,7 +764,8 @@ class World:
                 self.owner[i], self.level[i], self.bld[i] = 0, 0, B.NONE
                 self.ruin[i] = self.cfg["browsers_rules"]["ruin_ticks"]
         f["rebirths"] = f.get("rebirths", 0) + 1
-        f["capital"] = self._place(f"{f['kind']}:{f['name']}:{f['rebirths']}", prefer_hill=False, avoid=old)
+        f["capital"] = self._place(f"{f['kind']}:{f['name']}:{f['rebirths']}", prefer_hill=False, avoid=old,
+                                   isle=f.get("isle"))
         f["specials"] = {}
         f["tiles"] = 0
         f["bonus"] = 0
@@ -624,6 +776,8 @@ class World:
     def _claimable(self, i: int, f: dict, by_id: dict) -> bool:
         if self.terrain[i] not in LAND or self.wall[i] or self.burn[i] or self.lava[i]:
             return False
+        if self._tile_isle[i] != f.get("isle"):
+            return False                          # al crecer, cada reino se queda en su isla (cruzar es guerra)
         if i in self._struct_tiles:
             return False
         o = self.owner[i]
@@ -664,7 +818,7 @@ class World:
             walls = sum(g["uptime"] >= t for t in fort["walls_at"])
             title = self.lore.structure_name(g["kind"], g["name"])
             if s is None:
-                x, y = self._place(key, prefer_hill=True)
+                x, y = self._place(key, prefer_hill=True, isle=self.split_key(key)[0])
                 s = self.structures[key] = {"key": key, "kind": g["kind"], "name": g["name"], "x": x, "y": y,
                                             "title": title, "walls": walls}
                 self._say("fundacion", "fort.found", (x, y), name=g["name"], **self._fort_kw(title))
@@ -755,7 +909,7 @@ class World:
                 for i in path[1:-1]:
                     self.road[i] = 1
 
-    def _path(self, start: int, goal: int, forest: float = 0.8) -> list[int] | None:
+    def _path(self, start: int, goal: int, forest: float = 0.8, sea: bool = False) -> list[int] | None:
         """Dijkstra con costo por terreno + ruido fijo: caminos que serpentean
         y que prefieren reusar tramos ya construidos (se forman troncales)."""
         if not hasattr(self, "_road_noise"):
@@ -776,9 +930,13 @@ class World:
             if d > dist[i]:
                 continue
             for j in self.neighbors(i):
-                if j != goal and (self.terrain[j] not in LAND or j in self._struct_tiles):
+                water = self.terrain[j] == WATER
+                if j != goal and ((self.terrain[j] not in LAND and not (sea and water)) or j in self._struct_tiles):
                     continue
-                step = 0.35 if self.road[j] else 1 + 1.6 * self._road_noise[j] + extra.get(self.terrain[j], 0)
+                if water:
+                    step = 1.0                              # en barco: derecho y parejo
+                else:
+                    step = 0.35 if self.road[j] else 1 + 1.6 * self._road_noise[j] + extra.get(self.terrain[j], 0)
                 nd = d + step
                 if nd < dist.get(j, 1e18):
                     dist[j], prev[j] = nd, i
@@ -873,6 +1031,16 @@ class World:
         for j in self.neighbors(i):
             if (self.owner[j] or self.terrain[j] == FOREST) and self.rng.random() < 0.3:
                 self.burn[j] = burn // 2
+
+    def _isle_storms(self, snap: dict, events: list[dict]):
+        """Cada máquina del lab trae su clima: con la CPU alta caen rayos en su isla."""
+        for iid, info in (snap.get("isles") or {}).items():
+            if iid not in self.isles or not info.get("online") or info.get("cpu", 0) < 70:
+                continue
+            if self.rng.random() < (info["cpu"] - 60) / 400:
+                tiles = [i for i, t in enumerate(self._tile_isle) if t == iid and self.terrain[i] in LAND]
+                if tiles:
+                    self._strike(self.rng.choice(tiles), events)
 
     def _weather_effects(self, snap: dict, events: list[dict]):
         wc = self.cfg["weather"]
@@ -1244,12 +1412,22 @@ class World:
         """Manda `n` personas de la capital de `f` a la casilla `target` (por tierra).
         Tardan ~1 tick cada 2 casillas en llegar y `work` ticks trabajando allá."""
         src = self.idx(*f["capital"]) if f else target
-        # las expediciones prefieren caminos y campo abierto: se ven, y no cruzan el bosque si no hace falta
-        path = (self._path(src, target, forest=5.0) or [src, target]) if src != target else [target]
+        # las expediciones prefieren caminos y campo abierto: se ven, y no cruzan el bosque si no hace falta.
+        # Si no hay camino por tierra (otra isla), se embarcan: el camino sigue por el mar.
+        if src == target:
+            path = [target]
+        else:
+            path = self._path(src, target, forest=5.0) or self._path(src, target, forest=5.0, sea=True) \
+                or [src, target]
         self.counters["expeditions"] = self.counters.get("expeditions", 0) + 1
         e = {"id": self.counters["expeditions"], "kind": kind, "fid": f["id"] if f else 0, "path": path,
              "start": self.tick, "eta": max(2, len(path) // 2), "work": work, "n": n,
              "target": list(self.xy(target)), "data": data}
+        if any(self.terrain[i] == WATER for i in path[1:-1]):
+            e["naval"] = True
+            if f and kind in ("army", "siegecity", "explore"):
+                self._say("guerra" if kind != "explore" else "expedicion", "exp.fleet.sail", self.xy(target),
+                          realm=f["realm"], place=self._place_at(target))
         self.expeditions.append(e)
         return e
 
@@ -1400,6 +1578,9 @@ class World:
             pairs = [(a, b) for a in realms for b in realms if a["id"] < b["id"]
                      and a["id"] not in busy and b["id"] not in busy
                      and self.war_cooldown.get(f"{a['id']}:{b['id']}", 0) <= self.tick]
+            overseas = [(a, b) for a, b in pairs if a.get("isle") != b.get("isle")]
+            if overseas and rng.random() < 0.5:                # con islas del lab: guerras por mar
+                pairs = overseas
             if pairs:
                 a, b = min(pairs, key=lambda ab: self._dist(self.idx(*ab[0]["capital"]), ab[1]["capital"])
                            + rng.random() * 8)
@@ -1487,9 +1668,10 @@ class World:
         target = min((i for i, o in enumerate(self.owner) if o == b["id"]),
                      key=lambda i: self._dist(i, a["capital"]), default=None)
         if target is not None:
-            self._launch("army", a, target, work=40, n=10, war=key, defender=b["id"])
-            self._say("guerra", "exp.army.march", self.xy(target), realm=a["realm"],
-                      place=self._place_at(target))
+            e = self._launch("army", a, target, work=40, n=10, war=key, defender=b["id"])
+            if not e.get("naval"):                        # por mar ya lo anunció la flota
+                self._say("guerra", "exp.army.march", self.xy(target), realm=a["realm"],
+                          place=self._place_at(target))
 
     def _sack_capital(self, att: dict, dfn: dict, events: list[dict]):
         """Saqueo: arde el centro, el tesoro del atacante crece y la corte huye
@@ -1729,7 +1911,7 @@ class World:
                           a_bname=words("buildings_a").get(b, words("buildings")[b]),
                           first_bname=words("buildings_first").get(b, words("buildings")[b]), **self._realm_kw(f))
                 if b == B.TEMPLE and not f.get("cult"):
-                    f["cult"] = c = self.lore.deity(f["name"])
+                    f["cult"] = c = self.lore.deity(f.get("proc") or f["name"])
                     self._say("fe", "faith.found", self.xy(i), realm=f["realm"], deity=c["name"],
                               epithet=self.lore.deity_epithet(c), cult=self.lore.cult_name(c))
         names = {str(b): b for b, _ in B.SPECIALS}

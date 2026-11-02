@@ -106,7 +106,6 @@ class Wallpaper:
         self.pixel_scale = rc["pixel_scale"]
         self.interactive = rc.get("interactive", True)
         self.state_path = Path(args.state)
-        self.home_state_path = self.state_path       # tu isla; las del lab están en islands/<id>.json
         self.painter = Painter(cfg["daemon"]["interval"], rc.get("hemisphere", "auto"))
         self.painter.show_chronicle = rc.get("show_chronicle", True)
         self.painter.show_powers = rc.get("show_powers", True)
@@ -325,8 +324,6 @@ class Wallpaper:
             self._set_wallpaper(not p.wallpaper_on)
         elif action[0] == "quit":
             self.win.close()                        # el daemon (el mundo) sigue corriendo aparte
-        elif action[0] == "new_world" and p.isle:
-            p.toast(ui("isle.home_only"), now, ok=False)
         elif action[0] == "new_world":
             if p.confirm_new_until > now:           # segundo clic: confirmado
                 p.confirm_new_until = 0
@@ -421,30 +418,26 @@ class Wallpaper:
 
     # -- islas del lab -------------------------------------------------------------
 
-    @staticmethod
-    def _isle_path(iid: str) -> Path:
-        return paths.state_file().parent / "islands" / f"{iid}.json"
-
     def _switch_isle(self, iid: str | None, now: float):
-        """Mirar otra isla: cambia el estado que se lee; el resto de la ventana sigue igual."""
+        """Pestañas: la cámara viaja a esa isla (es el mismo mapa: se puede ir navegando)."""
         p = self.painter
-        if iid == p.isle:
-            return
-        if iid is not None and not self._isle_path(iid).exists():
-            info = next((i for i in (p.state or {}).get("islands", []) if i["id"] == iid), {})
-            p.toast(ui("isle.notyet", reason=ui("isle.reason." + (info.get("reason") or "waiting"))), now, ok=False)
-            self._render()
-            return
+        st = p.state or {}
+        if iid is None:
+            h = st.get("home_n") or st.get("w", 72)
+            target = (h // 2, h // 2)
+        else:
+            info = next((i for i in st.get("islands", []) if i["id"] == iid), {})
+            if not info.get("c"):                          # todavía no respondió: no hay isla
+                p.toast(ui("isle.notyet", reason=ui("isle.reason." + (info.get("reason") or "waiting"))), now,
+                        ok=False)
+                self._render()
+                return
+            target = tuple(info["c"])
         p.isle = iid
-        self.state_path = self._isle_path(iid) if iid else self.home_state_path
-        self._mtime = None
-        self.zoom = 0
-        p.pan = [0.0, 0.0]
-        p.card = None
-        p.select_power(None)
-        p.director.update(key=None, since=-1e9, pin=None)
         p._ui_dirty = True
-        self._poll_state()
+        if self.zoom < 1:
+            self.zoom = 1
+        p.focus_tile(*target)
         self._render()
 
     def _open_machines(self):
@@ -720,8 +713,6 @@ class Wallpaper:
 
     def _send_command(self, cmd: dict):
         """Deja un pedido para el daemon (lo procesa en el próximo tick)."""
-        if self.painter.isle and "power" in cmd:
-            cmd = dict(cmd, isle=self.painter.isle)  # el poder cae en la isla que estás mirando
         folder = paths.commands_dir()
         folder.mkdir(parents=True, exist_ok=True)
         name = folder / f"{time.time_ns()}.json"
@@ -909,15 +900,12 @@ class Wallpaper:
         """stat() una vez por segundo: más simple y robusto que inotify con rename."""
         if not self.layered:
             self._check_focus_request()
-        if self.painter.isle and not self.state_path.exists():
-            self._switch_isle(None, time.monotonic())  # esa máquina se quitó de la lista
         try:
             mtime = self.state_path.stat().st_mtime_ns
             if mtime != self._mtime:
                 self._mtime = mtime
                 state = json.loads(self.state_path.read_text())
-                if not state.get("isle"):
-                    self.painter.home_name = state.get("kingdom", "")
+                self.painter.home_name = state.get("kingdom", "")
                 self.painter.set_state(state, time.monotonic())
                 if self._fps == 0 and not self.paused:   # idle_fps = 0: pintar solo al cambiar
                     self._render()

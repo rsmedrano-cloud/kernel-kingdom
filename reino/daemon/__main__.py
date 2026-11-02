@@ -139,11 +139,8 @@ def main():
         if any(c.get("action") == "remote_reload" for c in commands):
             cfg = config.load(args.config)                 # Menú > Máquinas cambió la lista
             arch.reload(cfg)
-        isle_cmds: dict[str, list] = {}
-        for c in commands:                                 # poderes lanzados sobre una isla
-            if c.get("isle"):
-                isle_cmds.setdefault(str(c["isle"]), []).append(c)
-        commands = [c for c in commands if c.get("action") not in ("language", "remote_reload") and not c.get("isle")]
+        commands = [c for c in commands if c.get("action") not in ("language", "remote_reload")]
+        snap = arch.merge(snap, world, interval)           # las máquinas del lab, como islas del mismo mundo
         events = world.step(snap, commands)
         fresh = world.chronicle.take_fresh()
         story.archive(fresh)                               # historia del día, sin límite de entradas
@@ -154,12 +151,10 @@ def main():
             story.export(day, world.kingdom, world.lore.era_name(world.era))
             day = today
         state = build_state(world, snap, events, interval)
-        state["islands"], state["isle"] = arch.summary(), None
+        state["islands"] = arch.summary(world)
         write_atomic(state_path, state)
-        arch.step(world.tick, interval, isle_cmds, build_state, write_atomic)
         if t0 >= next_save:
             write_atomic(save_path, world.to_dict())
-            arch.save(write_atomic)
             next_save = t0 + cfg["daemon"]["save_every"]
         cost = time.monotonic() - t0
         if args.verbose:
@@ -172,7 +167,7 @@ def main():
             inputs.wait(min(left, 0.5), stop)
 
     write_atomic(save_path, world.to_dict())
-    arch.close(write_atomic)
+    arch.close()
 
 
 if __name__ == "__main__":

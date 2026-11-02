@@ -144,11 +144,13 @@ the town is looted).
 
 ## Your lab as an archipelago
 
-Other machines (a home server, a Raspberry Pi…) can show up as islands with their
-own realms: heavy apps and big containers become cities, the rest of the containers
-and services become fortresses, CPU brings storms, and a machine that goes down
-leaves its island dark and in ruins. Switch islands with the tabs at the top;
-powers fall on the island you are looking at.
+Other machines (a home server, a Raspberry Pi…) rise from the sea as islands of the
+same map, around yours: heavy apps and big containers become cities, a few more
+containers and services become fortresses, the machine's CPU brings storms to its
+island, and a machine that goes down leaves its island in ruins. Realms of different
+machines **go to war across the sea**: war galleys sail, land on the enemy coast and
+fight their way in. Zoom and drag to sail around; the tabs at the top fly the camera
+to each island.
 
 Add them from **Menu > World > Lab machines…** (`user@machine`; it tests the
 connection before adding it). It is read-only and nothing is installed or opened on
@@ -159,7 +161,8 @@ your network by the app:
 - On each machine that key is restricted in `authorized_keys` to run a single fixed
   script that prints a JSON report: [protocol and fields](docs/remote-protocol.md).
 - Machine names, users and IPs never reach the map, the chronicle or what you share:
-  each island gets a made-up name; connection errors show a short reason.
+  each island gets a made-up name, a container or process named after the machine
+  is renamed (`myhost-webui` → `webui`), and connection errors show a short reason.
 
 ## Zoom
 
