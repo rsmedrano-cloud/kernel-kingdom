@@ -175,6 +175,10 @@ TEXT = {
     "wonder.done": ["Los obreros terminaron {title}: {effect}.", "{Title} ya se alza sobre la isla: {effect}."],
     "isle.rise": ["Del mar emerge una isla nueva: {isle}.", "Los marinos avistan tierra donde antes había mar: la isla de {isle}."],
     "exp.fleet.sail": ["La flota de {realm} zarpa rumbo a {place}.", "Las naves de {realm} cruzan el mar hacia {place}."],
+    "isle.grow": "Las aguas retroceden alrededor de {isle}: la isla crece.",
+    "isle.shrink": "El mar avanza sobre las costas de {isle}.",
+    "raid.sail": ["Un barco de {a} cruza el mar para saquear las costas de {b} en {place}.", "Corsarios de {a} ponen proa a {place}, en tierras de {b}."],
+    "raid.back": ["Los corsarios de {a} vuelven de las costas de {b} con {gold} de oro.", "El barco de {a} regresa cargado: {gold} de oro saqueado a {b}."],
     "power.fail": "No alcanza: {power} cuesta {cost}.",
     "power.notarget": "{power}: elegí una casilla válida.",
     # -- expediciones: gente que va y hace cosas en el mapa --
@@ -319,6 +323,7 @@ WORDS = {
                        "observatorio": "el Soberano ganará maná", "jardines": "el reino florecerá"},
     "region_kinds": {"forest": "Bosque de {n}", "mountains": "Montes de {n}", "hills": "Colinas de {n}",
                      "coast": "Costa de {n}", "valley": "Valle de {n}", "plains": "Llanos de {n}"},
+    "archipelago": "Archipiélago de {name}",
     "lands": ["tierra", "tierras"],
     "resources": {"gold": "oro", "stone": "piedra", "mana": "maná", "defense": "defensa"},
 }
@@ -338,6 +343,7 @@ UI = {
     "hud.fog": "NIEBLA: RAM al límite",
     "hud.heat": "OLA DE CALOR",
     "hud.plague": "PESTE (swap)",
+    "chron.title_world": "Crónica del {name}",
     "chron.title": "Crónica de {kingdom}",
     "card.of": "{building} de {realm}",
     "card.capital": "capital",

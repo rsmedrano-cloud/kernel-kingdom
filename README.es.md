@@ -150,8 +150,11 @@ mismo mapa, alrededor de la tuya: las aplicaciones pesadas y los contenedores gr
 son ciudades, algunos contenedores y servicios más son fortalezas, la CPU de cada
 máquina trae tormentas a su isla, y una máquina que se cae deja su isla en ruinas. Los
 reinos de distintas máquinas **se hacen la guerra por mar**: zarpan galeras, desembarcan
-en la costa enemiga y avanzan peleando. Con zoom y arrastre navegás el archipiélago; las
-pestañas de arriba llevan la cámara a cada isla.
+en la costa enemiga y avanzan peleando, y cada tanto cruzan corsarios a saquear una costa.
+Cada isla tiene el tamaño de la RAM de su máquina (la tuya sigue siendo la más grande).
+Con zoom y arrastre navegás el archipiélago; las pestañas de arriba llevan la cámara a
+cada isla y filtran la crónica: la primera es el archipiélago entero, con la historia de
+todas las islas junta.
 
 Se agregan desde **Menú > Mundo > Máquinas del lab…** (`usuario@máquina`; prueba la
 conexión antes de agregarla). Es solo lectura y la app no instala ni abre nada en tu

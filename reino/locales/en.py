@@ -169,6 +169,10 @@ TEXT = {
     "wonder.done": ["The workers finished {title}: {effect}.", "{Title} now rises over the island: {effect}."],
     "isle.rise": ["A new island rises from the sea: {isle}.", "Sailors sight land where there was only sea: the island of {isle}."],
     "exp.fleet.sail": ["The fleet of {realm} sets sail for {place}.", "The ships of {realm} cross the sea towards {place}."],
+    "isle.grow": "The waters recede around {isle}: the island grows.",
+    "isle.shrink": "The sea creeps over the shores of {isle}.",
+    "raid.sail": ["A ship from {a} crosses the sea to raid the shores of {b} at {place}.", "Corsairs of {a} set course for {place}, in the lands of {b}."],
+    "raid.back": ["The corsairs of {a} return from the shores of {b} with {gold} gold.", "The ship of {a} comes back loaded: {gold} gold plundered from {b}."],
     "power.fail": "Not enough: {power} costs {cost}.",
     "power.notarget": "{power}: pick a valid tile.",
     # -- expediciones: gente que va y hace cosas en el mapa --
@@ -308,6 +312,7 @@ WORDS = {
                        "observatorio": "the Sovereign will gain mana", "jardines": "the realm will flourish"},
     "region_kinds": {"forest": "{n} Woods", "mountains": "{n} Mountains", "hills": "{n} Hills",
                      "coast": "{n} Coast", "valley": "{n} Vale", "plains": "{n} Plains"},
+    "archipelago": "{name} Archipelago",
     "lands": ["land", "lands"],
     "resources": {"gold": "gold", "stone": "stone", "mana": "mana", "defense": "defense"},
 }
@@ -327,6 +332,7 @@ UI = {
     "hud.fog": "FOG: RAM at its limit",
     "hud.heat": "HEAT WAVE",
     "hud.plague": "PLAGUE (swap)",
+    "chron.title_world": "Chronicle of the {name}",
     "chron.title": "Chronicle of {kingdom}",
     "card.of": "{building} of {realm}",
     "card.capital": "capital",

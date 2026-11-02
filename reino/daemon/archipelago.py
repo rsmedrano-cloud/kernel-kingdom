@@ -195,8 +195,12 @@ class Archipelago:
             if not (isl.online and isl.snap):
                 out["isles"][iid] = {"online": False}
                 continue
+            scale = world.isle_scale(isl.snap.get("ram_total_mb"))   # isla del tamaño de su máquina
             if iid not in world.isles:
-                world.add_isle(iid, island_name(self.cfg, iid))
+                world.add_isle(iid, island_name(self.cfg, iid), scale)
+            elif abs(world.isles[iid].get("scale", 1.0) - scale) >= 0.08 \
+                    or world.isles[iid].get("shape_v") != world.SHAPE_V:
+                world.reshape_isle(iid, scale)
             words = host_words(t, isl.snap.get("host"))
             self._scrub_world(world, iid, words)
             r = to_snap(isl.snap, interval)

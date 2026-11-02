@@ -149,8 +149,10 @@ same map, around yours: heavy apps and big containers become cities, a few more
 containers and services become fortresses, the machine's CPU brings storms to its
 island, and a machine that goes down leaves its island in ruins. Realms of different
 machines **go to war across the sea**: war galleys sail, land on the enemy coast and
-fight their way in. Zoom and drag to sail around; the tabs at the top fly the camera
-to each island.
+fight their way in, and corsairs cross over now and then to raid a coast. Each island
+is sized by its machine's RAM (yours stays the largest). Zoom and drag to sail around;
+the tabs at the top fly the camera to each island and filter the chronicle: the
+first tab is the whole archipelago, with every island's story in one place.
 
 Add them from **Menu > World > Lab machines…** (`user@machine`; it tests the
 connection before adding it). It is read-only and nothing is installed or opened on

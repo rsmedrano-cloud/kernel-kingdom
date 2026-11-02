@@ -80,14 +80,15 @@ def island_distance(n: int, aspect: float):
     return d
 
 
-def generate_terrain(n: int, aspect: float, seed: int) -> list[int]:
+def generate_terrain(n: int, aspect: float, seed: int, scale: float = 1.0) -> list[int]:
+    """`scale` < 1 achica la isla dentro de su cuadrado (más mar alrededor)."""
     rng = random.Random(seed)
     n1, n2, n3 = (_value_noise(n, rng, c) for c in (14, 7, 3.5))
     moist = _value_noise(n, rng, 8)
     dist = island_distance(n, aspect)
     elev, inside = [], 0
     for i in range(n * n):
-        d = dist(i % n, i // n)
+        d = dist(i % n, i // n) / scale
         inside += d < 0.97
         noise = 0.55 * n1[i] + 0.30 * n2[i] + 0.15 * n3[i]
         elev.append(0.65 * noise + 0.85 * (1 - d * d))
@@ -326,6 +327,8 @@ class World:
         d["era_name"] = self.lore.era_name(self.era)
         d["powers"] = self.power_costs()
         d["region"] = self.region
+        d["isle_size"] = ISLE_SIZE
+        d["archipelago"] = self.archipelago_name() if self.isles else None
         return d
 
     def power_costs(self) -> dict[str, dict]:
@@ -361,6 +364,7 @@ class World:
         self._society(snap)
         self._wonder_effects()
         self._pirates()
+        self._raids()
         self._ambition(events)
         self._drift()
         self._adventures()
@@ -454,7 +458,54 @@ class World:
         self._make_tile_rand()
         self._isle_grid()
 
-    def add_isle(self, iid: str, name: str) -> bool:
+    @staticmethod
+    def isle_scale(total_mb: float) -> float:
+        """Tamaño de la isla según la RAM de la máquina: 1 GB -> 0.4, 32 GB o más -> 1."""
+        gb = max(1.0, (total_mb or 0) / 1024)
+        return round(min(1.0, 0.4 + 0.12 * math.log2(gb)), 2)
+
+    SHAPE_V = 2                    # versión de la regla de reacomodo (para rehacer islas viejas)
+
+    def reshape_isle(self, iid: str, scale: float):
+        """La isla toma el tamaño de su máquina: el mar avanza o retrocede por los bordes.
+        Lo que queda bajo el agua se hunde (nada de islotes sueltos); las capitales y
+        fortalezas que estaban ahí se mudan a tierra firme de la misma isla."""
+        info = self.isles[iid]
+        x0, y0 = info["slot"]
+        terrain = generate_terrain(ISLE_SIZE, 1.3, int(iid, 16) & 0x7FFFFFFF, scale)
+        grew = shrank = 0
+        sunk = set()
+        for k, t in enumerate(terrain):
+            i = self.idx(x0 + k % ISLE_SIZE, y0 + k // ISLE_SIZE)
+            if t == WATER and self.terrain[i] != WATER:
+                self.terrain[i] = WATER
+                self.owner[i] = self.level[i] = self.road[i] = self.wall[i] = self.burn[i] = self.ruin[i] = 0
+                self.bld[i] = B.NONE
+                sunk.add(i)
+                shrank += 1
+            elif t != WATER and self.terrain[i] == WATER:
+                self.terrain[i] = t
+                near = [self.region[j] for j in self.neighbors(i) if self.region[j] >= 0]
+                self.region[i] = near[0] if near else -1
+                grew += 1
+        info.update(scale=scale, shape_v=self.SHAPE_V)
+        self.land_tiles = sum(1 for t in self.terrain if t in LAND)
+        self._struct_tiles = {k: v for k, v in self._struct_tiles.items() if k not in sunk}
+        for f in self.factions.values():                     # capitales que quedaron bajo el agua
+            if f.get("isle") == iid and self.idx(*f["capital"]) in sunk:
+                f["capital"] = self._place(f"{f['kind']}:{f['name']}:costa", prefer_hill=False, isle=iid)
+                f["specials"] = {}
+        for st in self.structures.values():                  # fortalezas: se mudan tierra adentro
+            if self.idx(st["x"], st["y"]) in sunk:
+                st["x"], st["y"] = self._place(st["key"] + ":costa", prefer_hill=True, isle=iid)
+        tiles = [i for i, t in enumerate(self._tile_isle) if t == iid and self.terrain[i] != WATER]
+        if tiles:
+            c = min(tiles, key=lambda i: abs(i % self.n - x0 - ISLE_SIZE / 2) + abs(i // self.n - y0 - ISLE_SIZE / 2))
+            info["c"] = list(self.xy(c))
+        if grew or shrank:
+            self._say("mundo", "isle.grow" if grew >= shrank else "isle.shrink", info.get("c"), isle=info["name"])
+
+    def add_isle(self, iid: str, name: str, scale: float = 1.0) -> bool:
         """Una máquina del lab respondió por primera vez: emerge su isla del mar."""
         if iid in self.isles:
             return False
@@ -465,9 +516,10 @@ class World:
         x0, y0 = free[0]
         need = max(self.n, x0 + ISLE_SIZE + 4, y0 + ISLE_SIZE + 4)
         self.expand(need)
-        self.isles[iid] = {"slot": [x0, y0], "name": name, "since": self.tick}
+        self.isles[iid] = {"slot": [x0, y0], "name": name, "since": self.tick, "scale": scale,
+                           "shape_v": self.SHAPE_V}
         self._isle_grid()
-        terrain = generate_terrain(ISLE_SIZE, 1.3, int(iid, 16) & 0x7FFFFFFF)
+        terrain = generate_terrain(ISLE_SIZE, 1.3, int(iid, 16) & 0x7FFFFFFF, scale)
         tiles = []
         for k, t in enumerate(terrain):
             if t == WATER:
@@ -481,6 +533,10 @@ class World:
         self.isles[iid]["c"] = list(self.xy(c))
         self._say("mundo", "isle.rise", self.xy(c), isle=name)
         return True
+
+    def archipelago_name(self) -> str:
+        """El mundo entero, cuando hay islas del lab: un nombre propio y estable."""
+        return words("archipelago").format(name=self.lore.region("archipelago"))
 
     def isle_summary(self) -> dict:
         return {iid: {"name": info["name"], "c": info.get("c")} for iid, info in self.isles.items()}
@@ -1374,6 +1430,28 @@ class World:
                   b=b["realm"] if b else "?")
         return True
 
+    def _raids(self):
+        """Con islas del lab, de vez en cuando un reino costero manda un barco a saquear
+        la costa de otra isla (sin declarar la guerra): incendia algo y vuelve con oro."""
+        if not self.isles or self.rng.random() > 1 / 2500 or any(e["kind"] == "raid" for e in self.expeditions):
+            return
+        alive = [f for f in self.factions.values() if f.get("alive") and f.get("tiles", 0) >= 10]
+        att = self.rng.choice(alive) if alive else None
+        if not att:
+            return
+        foes = [f for f in alive if f.get("isle") != att.get("isle")]
+        if not foes:
+            return
+        dfn = self.rng.choice(foes)
+        coast = [i for i, o in enumerate(self.owner) if o == dfn["id"]
+                 and any(self.terrain[j] == WATER for j in self.neighbors(i))]
+        if not coast:
+            return
+        target = min(coast, key=lambda i: self._dist(i, att["capital"]))
+        e = self._launch("raid", att, target, work=12, n=4, defender=dfn["id"])
+        self._say("guerra", "raid.sail", self.xy(target), a=att["realm"], b=dfn["realm"], place=self._place_at(target),
+                  naval=bool(e.get("naval")))
+
     def _pirates(self):
         """Un tesoro muy gordo atrae piratas: se llevan una parte."""
         gold = self.resources["gold"]
@@ -1455,6 +1533,8 @@ class World:
             self._army_fight(e, events)
         if e["kind"] in ("siegecity", "army") and t % 3 == 0 and self.rng.random() < 0.5:
             self._war_damage(e, 2 if e["kind"] == "siegecity" else 1)
+        elif e["kind"] == "raid" and t % 3 == 0:
+            self._war_damage(e, 1)
 
     def _war_damage(self, e: dict, radius: int):
         """Piedras de catapulta y antorchas: arde algún edificio enemigo cerca del asedio."""
@@ -1491,6 +1571,11 @@ class World:
             self.resources[kind] += amount
             self._say("expedicion", "exp.explore.find", (x, y), realm=f["realm"], place=d["place"],
                       reward=f"{amount} {words('resources')[kind]}")
+        elif e["kind"] == "raid" and f:
+            loot = self.rng.randint(15, 45)
+            self.resources["gold"] += loot
+            d_f = next((o for o in self.factions.values() if o["id"] == d.get("defender")), None)
+            self._say("guerra", "raid.back", (x, y), a=f["realm"], b=d_f["realm"] if d_f else "?", gold=loot)
         elif e["kind"] == "siegecity" and f:
             d_f = next((o for o in self.factions.values() if o["id"] == d["defender"]), None)
             if not d_f or not d_f.get("alive") or list(d_f["capital"]) != [x, y]:

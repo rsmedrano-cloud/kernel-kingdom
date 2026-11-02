@@ -126,6 +126,28 @@ class ArchipelagoTest(unittest.TestCase):
         self.assertNotIn("secreto", text)
         self.assertIn(f"{iid}/openwebui", w.factions)
 
+    def test_island_size_follows_the_machine_and_shrinking_leaves_no_islets(self):
+        self.assertEqual(World.isle_scale(512), 0.4)
+        self.assertEqual(World.isle_scale(64 * 1024), 1.0)
+        self.assertLess(World.isle_scale(2048), World.isle_scale(16 * 1024))
+        w = World(self.cfg)
+        arch = self.arch_with_report(w)
+        for _ in range(60):
+            w.step(arch.merge(copy.deepcopy(self.local), w, 2.0))
+        iid = A.island_id("kk@secreto-lab")
+        big = sum(1 for i, t in enumerate(w._tile_isle) if t == iid and w.terrain[i] != WATER)
+        w.reshape_isle(iid, 0.4)
+        land = {i for i, t in enumerate(w._tile_isle) if t == iid and w.terrain[i] != WATER}
+        self.assertLess(len(land), big)
+        for f in w.factions.values():                            # nada quedó en el agua
+            if f.get("isle") == iid:
+                self.assertIn(w.idx(*f["capital"]), land)
+        for s in w.structures.values():
+            if s["key"].startswith(iid):
+                self.assertIn(w.idx(s["x"], s["y"]), land)
+        for _ in range(5):
+            w.step(arch.merge(copy.deepcopy(self.local), w, 2.0))
+
     def test_war_between_islands_sails_across_the_sea(self):
         w = World(self.cfg)
         arch = self.arch_with_report(w)

@@ -969,6 +969,7 @@ _MARKERS = {
     "exp.build.start": (_GOLD, "flag"), "exp.build.done": (_GOLD, "star"), "exp.plant.start": (_GREEN, "flag"),
     "dyn.reborn": (_GOLD, "flag"), "fall": (_RED, "flag"), "found.realm": (_GOLD, "flag"), "monument": (_GOLD, "star"),
     "power.rayo": (_BLUE, "star"), "power.dragon": (_RED, "swords"), "pirates": (_RED, "swords"),
+    "raid.sail": (_RED, "swords"), "exp.fleet.sail": (_RED, "swords"), "isle.rise": (_GOLD, "star"),
     "walls.breach": (_RED, "swords"), "walls.held": (_BLUE, "star"), "power.maravilla": (_GOLD, "flag"),
     "wonder.done": (_GOLD, "star"), "power.tregua": (_GREEN, "flag"), "wonder.coloso.held": (_BLUE, "star"),
 }
@@ -1098,7 +1099,7 @@ class Painter:
         self._labels_rects: list = []
         self.mini = False                  # ventana chiquita: sin paneles, cámara director y una tira de noticias
         self.home_name = ""                # nombre de tu isla (para la pestaña, aunque estés mirando otra)
-        self.isle = None                   # None = tu isla; si no, el id de la isla remota que se mira
+        self.isle = "*"                    # qué crónica se ve: "*" todo el archipiélago, None tu isla, o el id de una isla
         self.isle_tabs = None
         self.director = {"key": None, "prio": 99, "since": -1e9, "caption": "", "pt": None}
         self.ticker = None
@@ -1931,8 +1932,10 @@ class Painter:
         if lines:
             self.hud = _panel(lines, title=ui("hud.title", kingdom=kingdom, era=st.get("era_name") or ""))
 
+        archipelago = st.get("archipelago")
+        view = self.isle if archipelago else "*"
         if show_chron and st.get("chronicle"):
-            entries = st["chronicle"]
+            entries = st["chronicle"] if view == "*" else [e for e in st["chronicle"] if self.entry_isle(e) == view]
             expanded = self.window_mode and self.chron_mode == 2
             width = min(560, int(fw * 0.6)) if expanded else min(340, fw // 2 - 12)
             free = fh - 12 - (self.hud.get_height() + 8 if self.hud else 0)   # sin tapar el HUD
@@ -1950,7 +1953,12 @@ class Painter:
                     rows.append(((stamp if j == 0 else " " * len(stamp)) + "  " + line,
                                  GOLD if "x" in e and self.window_mode and j == 0 and k == 0 else col, None))
                     self._chron_lines[len(rows) - 1] = e
-            title = ui("chron.title", kingdom=kingdom)
+            if view == "*" and archipelago:
+                title = ui("chron.title_world", name=archipelago)
+            elif view:
+                title = ui("chron.title", kingdom=next((i["name"] for i in st.get("islands", []) if i["id"] == view), ""))
+            else:
+                title = ui("chron.title", kingdom=self.home_name or kingdom)
             if self.chron_scroll:
                 title += ui("chron.back", n=self.chron_scroll)
             self.chron = _panel(rows, width=width, title=title)
@@ -1958,13 +1966,13 @@ class Painter:
         self.isle_tabs, self._tab_rects = None, []
         islands = st.get("islands") or []
         if self.window_mode and islands:
-            tabs = [(None, self.home_name or st.get("kingdom", ""), True, None)] + \
+            tabs = [("*", archipelago or "", True, None), (None, self.home_name or st.get("kingdom", ""), True, None)] + \
                    [(i["id"], i["name"], i["online"], i.get("reason")) for i in islands]
             self.isle_tabs = []
             for iid, name, online, why in tabs:
-                mark = "■" if iid == self.isle else ("●" if online else "○")
+                mark = "■" if iid == view else ("◆" if iid == "*" else "●" if online else "○")
                 text = f"{mark} {name}" + ("" if online or not why else f" · {ui('isle.reason.' + why)}")
-                col = GOLD if iid == self.isle else (TEXT if online else DIM)
+                col = GOLD if iid == view else (TEXT if online else DIM)
                 self.isle_tabs.append((iid, _panel([(text, col, None)])))
         if self.window_mode:
             self.chron_buttons = [] if self.mini else [("chron_share", _panel([(ui("chron.share"), GOLD, None)])),
@@ -2071,6 +2079,22 @@ class Painter:
         for name, (x, y, w, h) in self._rects.items():
             if x <= ux < x + w and y <= uy < y + h:
                 return name
+        return None
+
+    def entry_isle(self, e: dict):
+        """De qué isla es un suceso de la crónica (None = tu isla; sin lugar, también la tuya)."""
+        st = self.state
+        if "x" not in e:
+            return None
+        x, y = e["x"], e["y"]
+        h = st.get("home_n") or st["w"]
+        if x < h and y < h:
+            return None
+        size = st.get("isle_size", 36)
+        for iid, info in (st.get("isles") or {}).items():
+            x0, y0 = info["slot"]
+            if x0 <= x < x0 + size and y0 <= y < y0 + size:
+                return iid
         return None
 
     def ticker_entry_at(self, ux: float, uy: float) -> dict | None:
@@ -2828,7 +2852,7 @@ class Painter:
                 lead = walk * L
                 j0 = min(int(lead), L - 1)
                 if WATER in (st["terrain"][path[j0]], st["terrain"][path[j0 + 1]]):
-                    for k in range(3 if e["kind"] in ("army", "siegecity") else 1):
+                    for k in range(3 if e["kind"] in ("army", "siegecity") else 1):           # flota o un barco
                         pos = max(0.0, lead - k * 1.6)
                         j = min(int(pos), L - 1)
                         if st["terrain"][path[j]] != WATER:
@@ -2836,7 +2860,7 @@ class Painter:
                         (ax, ay), (bx, by) = pts[j], pts[j + 1]
                         x, y = ax + (bx - ax) * (pos - j), ay + (by - ay) * (pos - j)
                         bob = int(now * 1.5 + k) % 2
-                        war = e["kind"] in ("army", "siegecity")
+                        war = e["kind"] in ("army", "siegecity", "raid")
                         self._put(ctx, ("warship" if war else "boat", bx < ax, col), x, y + 3 + bob)
                         if war:
                             heads.extend([(x - 3, y + bob), (x - 1, y + bob), (x + 2, y + bob)])   # tropa en cubierta

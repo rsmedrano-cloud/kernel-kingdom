@@ -258,7 +258,7 @@ class Wallpaper:
         if region == "menu_btn":                    # abrir / cerrar el menú
             p.toggle_menu()
         elif region and region.startswith("isle:"):  # pestañas: tu isla o una del lab
-            self._switch_isle(None if region == "isle:home" else region[5:], now)
+            self._switch_isle(None if region == "isle:home" else region[5:], now)   # "*" = el archipiélago
         elif region == "ticker":                    # modo mini: clic en una noticia -> la cámara va ahí
             entry = p.ticker_entry_at(ux, uy)
             if entry:
@@ -419,9 +419,16 @@ class Wallpaper:
     # -- islas del lab -------------------------------------------------------------
 
     def _switch_isle(self, iid: str | None, now: float):
-        """Pestañas: la cámara viaja a esa isla (es el mismo mapa: se puede ir navegando)."""
+        """Pestañas: la cámara viaja a esa isla (es el mismo mapa: se puede ir navegando) y
+        la crónica muestra lo que pasó ahí. "*" = todo el archipiélago."""
         p = self.painter
         st = p.state or {}
+        p.chron_scroll = 0
+        if iid == "*":                                     # el mundo entero y su crónica completa
+            p.isle = "*"
+            p._ui_dirty = True
+            self._zoom_reset()
+            return
         if iid is None:
             h = st.get("home_n") or st.get("w", 72)
             target = (h // 2, h // 2)
