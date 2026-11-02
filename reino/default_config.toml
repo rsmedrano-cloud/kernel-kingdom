@@ -164,3 +164,12 @@ min_minutes = 10      # como mucho una cada tantos minutos (y ninguna con la ven
 
 [update]
 check = true          # la ventana consulta GitHub (cada 6 h como mucho) si hay versión nueva
+
+# ---------------------------------------------------------------------------
+[remote]
+# Máquinas del lab que aparecen como islas (protocolo en docs/remote-protocol.md).
+# Se consultan por SSH con una llave propia; en cada servidor esa llave ejecuta un
+# script fijo (command= en authorized_keys). Vacío = sin archipiélago.
+hosts = []            # ej. ["usuario@servidor1", "usuario@raspberry"] (también desde Menú > Mundo > Máquinas)
+key = "~/.ssh/kernel-kingdom"
+every = 20            # segundos entre consultas a cada máquina
