@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: ${{ matrix.distro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: fedora-43
+            image: registry.fedoraproject.org/fedora:43
+            deps: dnf install -y -q python3 python3-psutil python3-cairo python3-pillow
+          - distro: debian-trixie
+            image: docker.io/library/debian:trixie
+            deps: apt-get update -qq && apt-get install -y -qq python3 python3-psutil python3-cairo python3-pil
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: ${{ matrix.deps }}
+      - name: Tests
+        env:
+          KK_PERF_SLACK: "4"        # CI machines are slower and shared: looser time budgets
+        run: python3 -m unittest discover -s tests -v

@@ -1,5 +1,7 @@
 # kernel-kingdom — tu computadora es un reino
 
+[![tests](https://github.com/rsmedrano-cloud/kernel-kingdom/actions/workflows/tests.yml/badge.svg)](https://github.com/rsmedrano-cloud/kernel-kingdom/actions/workflows/tests.yml)
+
 Live wallpaper / idle game en **pixel art isométrico para Linux (Wayland)**. El
 mundo se construye con lo que tu máquina está haciendo de verdad: los
 navegadores son imperios, los contenedores son ciudadelas, compilar desata
@@ -209,6 +211,15 @@ reino/locales  todos los textos, castellano e inglés
 
 El mundo vive en el daemon: el reino sigue evolucionando aunque el fondo esté
 tapado. Tests: `python3 -m unittest discover -s tests`.
+
+## Desarrollo
+
+`main` es siempre la última versión estable: lo nuevo se hace en ramas y entra por
+pull request, donde corren los tests en Fedora y Debian
+(`python3 -m unittest discover -s tests`). Las actualizaciones (`kernel-kingdom update`
+y el Menú de la ventana) solo ofrecen **releases publicados**, así nada a medio hacer
+le llega a una instalación. El protocolo de las máquinas del lab está en
+[docs/remote-protocol.md](docs/remote-protocol.md).
 
 ## Licencia
 

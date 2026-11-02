@@ -23,7 +23,7 @@ On this day 528 events were written: 13 wars, 9 battles, 13 peace treaties, 6 fo
 
 ## Before dawn
 
-The waters receded and the island of Fedorlund rose from the sea. The annals speak of 2 earlier ages, the oldest from 2026-10-11, and of 2 gods who reigned over them. The Age of Furnaces begins, under the god Linux 6.17.4. Engineers raise the Bastion of Llavegrís to guard sshd. The first stone of the Citadel of Webgard was laid (web).
+The waters receded and the island of Kernelia rose from the sea. The annals speak of 2 earlier ages, the oldest from 2026-10-11, and of 2 gods who reigned over them. The Age of Furnaces begins, under the god Linux 6.17.4. Engineers raise the Bastion of Llavegrís to guard sshd. The first stone of the Citadel of Webgard was laid (web).
 
 The first stone of the Vault of Elefantia was laid (postgres). Sages found the Academy of Academroca. The banner of Cromaria is raised. Queen Daria I claims the land. The banner of Zenhar is raised. King Orald I claims the land. The banner of Zorravia is raised. King Veydor I claims the land.
 

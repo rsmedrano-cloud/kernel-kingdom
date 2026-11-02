@@ -132,8 +132,8 @@ Máximo 20.
   "containers": [
     {"name": "jellyfin", "runtime": "docker", "state": "running", "started": 1793350000,
      "rss_mb": 940.0, "cpu_s": 5120.7, "image": "jellyfin"},
-    {"name": "immich-ml", "runtime": "docker", "state": "exited", "started": null,
-     "rss_mb": null, "cpu_s": null, "image": "immich-machine-learning"}
+    {"name": "photos-ml", "runtime": "docker", "state": "exited", "started": null,
+     "rss_mb": null, "cpu_s": null, "image": "photos-machine-learning"}
   ],
   "services": [
     {"name": "sshd", "active": true, "since": 1793300020},

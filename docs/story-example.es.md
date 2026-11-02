@@ -23,7 +23,7 @@ En este día se escribieron 528 sucesos: 13 guerras, 9 batallas, 13 paces, 6 fun
 
 ## La madrugada
 
-Las aguas se retiraron y emergió la isla de Fedorlund. Los anales hablan de 2 eras anteriores, la más antigua del 2026-10-11, y de 2 dioses que reinaron en ellas. Comienza la Era de los Hornos, bajo el dios Linux 6.17.4. Ingenieros levantan el Bastión de Llavegrís para custodiar a sshd. Se colocó la primera piedra de la Ciudadela de Webgard (web).
+Las aguas se retiraron y emergió la isla de Kernelia. Los anales hablan de 2 eras anteriores, la más antigua del 2026-10-11, y de 2 dioses que reinaron en ellas. Comienza la Era de los Hornos, bajo el dios Linux 6.17.4. Ingenieros levantan el Bastión de Llavegrís para custodiar a sshd. Se colocó la primera piedra de la Ciudadela de Webgard (web).
 
 Se colocó la primera piedra de la Bóveda de Elefantia (postgres). Sabios fundan la Academia de Academroca. Se alza la bandera de Cromaria. La Reina Daria I reclama la tierra. Se alza la bandera de Zenhar. El Rey Orald I reclama la tierra. Se alza la bandera de Zorravia. El Rey Veydor I reclama la tierra.
 

@@ -391,8 +391,8 @@ class World:
         self._tile_rand = rand
 
     def _unique_realm(self, proc: str, key: str) -> str:
-        """Nombre de reino que no repita el de otro (immich_server e immich_postgres
-        darían los dos 'Immichhar')."""
+        """Nombre de reino que no repita el de otro (photos_server y photos_db
+        darían los dos 'Photosdor')."""
         used = {f["realm"] for f in self.factions.values() if f["name"] != key}
         realm = self.lore.realm(proc)
         for k in range(1, 12):

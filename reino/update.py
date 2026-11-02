@@ -1,9 +1,12 @@
 """Actualizaciones: ver si hay una versión nueva en GitHub e instalarla.
 
-Instalado con install.sh (venv): pip baja el tarball de main. Desde un clon de
-git: `git pull --ff-only`. Después se reinician los servicios para que el mundo
-y el fondo corran el código nuevo (el mundo guardado se conserva).
+Solo cuentan los *releases* publicados (v0.4.4, v0.5.0…), no lo último de main:
+así lo que está a medio hacer nunca le llega a nadie. Instalado con install.sh
+(venv): pip baja el tarball de ese release. Desde un clon de git (desarrollo):
+`git pull --ff-only`. Después se reinician los servicios para que el mundo y el
+fondo corran el código nuevo (el mundo guardado se conserva).
 """
+import json
 import re
 import shutil
 import subprocess
@@ -14,8 +17,7 @@ from pathlib import Path
 from . import __version__
 
 REPO = "https://github.com/rsmedrano-cloud/kernel-kingdom"
-TARBALL = f"{REPO}/archive/refs/heads/main.tar.gz"
-PYPROJECT = "https://raw.githubusercontent.com/rsmedrano-cloud/kernel-kingdom/main/pyproject.toml"
+RELEASES = "https://api.github.com/repos/rsmedrano-cloud/kernel-kingdom/releases/latest"
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -23,14 +25,21 @@ def _parse(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", v)[:3])
 
 
-def latest(timeout: float = 6.0) -> str | None:
-    """Versión publicada en main (None si no hay red)."""
+def latest_release(timeout: float = 6.0) -> tuple[str, str] | None:
+    """(versión, tag) del último release publicado; None si no hay red o releases."""
+    req = urllib.request.Request(RELEASES, headers={"Accept": "application/vnd.github+json",
+                                                    "User-Agent": f"kernel-kingdom/{__version__}"})
     try:
-        with urllib.request.urlopen(PYPROJECT, timeout=timeout) as r:
-            m = re.search(r'^version\s*=\s*"([^"]+)"', r.read().decode(), re.M)
-        return m.group(1) if m else None
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            tag = json.loads(r.read().decode()).get("tag_name") or ""
     except (OSError, ValueError):
         return None
+    return (tag.lstrip("v"), tag) if re.match(r"^v?\d+\.\d+", tag) else None
+
+
+def latest(timeout: float = 6.0) -> str | None:
+    rel = latest_release(timeout)
+    return rel[0] if rel else None
 
 
 def newer(timeout: float = 6.0) -> str | None:
@@ -54,6 +63,10 @@ def install() -> tuple[bool, str]:
     if (ROOT / ".git").exists() and shutil.which("git"):
         cmds = [["git", "-C", str(ROOT), "pull", "--ff-only"]]
     else:
+        rel = latest_release()
+        if not rel:
+            return False, "no pude consultar los releases de GitHub"
+        TARBALL = f"{REPO}/archive/refs/tags/{rel[1]}.tar.gz"
         pip = [sys.executable, "-m", "pip", "install", "--quiet", "--disable-pip-version-check"]
         if _offline_build():                     # psutil y setuptools del sistema: nada de PyPI
             cmds = [pip + ["--upgrade", "--force-reinstall", "--no-deps", "--no-build-isolation", TARBALL]]

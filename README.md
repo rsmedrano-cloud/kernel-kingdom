@@ -1,5 +1,7 @@
 # kernel-kingdom — your computer is a kingdom
 
+[![tests](https://github.com/rsmedrano-cloud/kernel-kingdom/actions/workflows/tests.yml/badge.svg)](https://github.com/rsmedrano-cloud/kernel-kingdom/actions/workflows/tests.yml)
+
 A pixel-art isometric **live wallpaper / idle game for Linux (Wayland)** where the
 world is built from what your machine is actually doing. Browsers become
 empires, containers become citadels, compiling summons thunderstorms, and a
@@ -207,6 +209,15 @@ reino/locales  all text, Spanish and English
 
 The world lives in the daemon, so the kingdom keeps evolving even while the
 wallpaper is hidden. Tests: `python3 -m unittest discover -s tests`.
+
+## Development
+
+`main` is always the latest stable version: new work happens in branches and
+lands through pull requests, where the test suite runs on Fedora and Debian
+(`python3 -m unittest discover -s tests`). Updates (`kernel-kingdom update` and
+the window's Menu) only offer **published releases**, so nothing half-done ever
+reaches an installed copy. The protocol for lab machines is in
+[docs/remote-protocol.md](docs/remote-protocol.md).
 
 ## License
 

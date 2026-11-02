@@ -93,8 +93,15 @@ check_shell || say "No gtk4-layer-shell: the wallpaper mode won't be available, 
 say "Creating virtualenv in $PREFIX"
 python3 -m venv --system-site-packages "$PREFIX/venv"
 SRC="$REPO"
-# a tarball, so git isn't required
-if [ -f pyproject.toml ] && grep -q 'name = "kernel-kingdom"' pyproject.toml; then SRC="."; else SRC="$REPO/archive/refs/heads/main.tar.gz"; fi
+# the latest published release, as a tarball (no git needed); main only if there is none yet
+if [ -f pyproject.toml ] && grep -q 'name = "kernel-kingdom"' pyproject.toml; then
+  SRC="."
+else
+  TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+          "https://api.github.com/repos/${REPO#https://github.com/}/releases/latest" 2>/dev/null \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", ""))' 2>/dev/null || true)
+  if [ -n "$TAG" ]; then SRC="$REPO/archive/refs/tags/$TAG.tar.gz"; else SRC="$REPO/archive/refs/heads/main.tar.gz"; fi
+fi
 say "Installing kernel-kingdom from $SRC"
 if offline_build; then   # with the distro's psutil/setuptools nothing comes from PyPI
   "$PREFIX/venv/bin/pip" install --quiet --upgrade --no-build-isolation --no-deps "$SRC"
