@@ -65,11 +65,13 @@ def snapshot(args, cfg):
         px, py = (float(v) for v in args.click.split(","))
         painter.inspect(px / scale, py / scale, now, ui_pos=(px / base, py / base))
         painter.hover = painter.pick(px / scale, py / scale)
+    uis = float(max(1, round(base)))                    # igual que la app: interfaz a escala entera
+    painter.ui_ratio = scale / uis
     surf = painter.frame(fw, fh, now + 0.05)
-    ui, _ = painter.ui(int(-(-sw // base)), int(-(-sh // base)), now + 0.05)
+    ui, _ = painter.ui(int(-(-sw // uis)), int(-(-sh // uis)), now + 0.05)
     big = cairo.ImageSurface(cairo.FORMAT_ARGB32, sw, sh)
     ctx = cairo.Context(big)
-    for layer, k in ((surf, scale / painter.u), (None if args.no_ui else ui, base)):
+    for layer, k in ((surf, scale / painter.u), (None if args.no_ui else ui, uis)):
         if layer is None:
             continue
         ctx.save()

@@ -458,6 +458,8 @@ UI = {
     "isle.reason.error": "connection error",
     "isle.reason.waiting": "waiting for the first response",
     "isle.notyet": "That island doesn't exist yet: {reason}.",
+    "menu.text_size": "Text size: {size}",
+    "menu.text_sizes": ["normal", "large", "huge"],
     "menu.wallpaper": "Wallpaper",
     "toast.wallpaper_on": "Wallpaper on ({monitors}). It starts with your session.",
     "toast.wallpaper_off": "Wallpaper off. The world keeps running.",

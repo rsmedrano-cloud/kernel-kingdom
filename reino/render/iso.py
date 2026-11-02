@@ -1115,6 +1115,7 @@ class Painter:
         self.window_mode = False          # en la ventana se actúa; el fondo de pantalla es solo para mirar
         self.view = {"status": True, "realms": False, "chron": True, "labels": True}   # paneles a la vista en la ventana
         self.show_labels = False           # en el fondo de pantalla ([render] labels)
+        self.text_step = 0                 # tamaño del texto: 0 normal, 1 grande, 2 enorme (Menú > Ver)
         self.ui_ratio = 1.0                # escala del mundo / escala de la interfaz (lo pone la app)
         self._labels_rects: list = []
         self.mini = False                  # ventana chiquita: sin paneles, cámara director y una tira de noticias
@@ -2031,6 +2032,7 @@ class Painter:
 
         add(ui("menu.view"), GOLD, None)
         add(f"  [{'x' if self.mini else ' '}] {ui('menu.mini')}", TEXT, ("mini",))
+        add(f"  {ui('menu.text_size', size=ui('menu.text_sizes')[self.text_step])}", TEXT, ("text_size",))
         for key in ("status", "realms", "chron", "labels"):
             if not self.mini or key == "labels":
                 add(f"  [{'x' if self.view[key] else ' '}] {ui('menu.' + key)}", TEXT, ("toggle", key))

@@ -110,6 +110,7 @@ class Wallpaper:
         self.painter.show_chronicle = rc.get("show_chronicle", True)
         self.painter.show_powers = rc.get("show_powers", True)
         self.painter.show_labels = rc.get("labels", False)
+        self.painter.text_step = int(_prefs().get("text_step", 0)) % 3
         self.painter.hour_override = args.hour
         self.painter.season_override = getattr(args, "season", None)
 
@@ -317,6 +318,10 @@ class Wallpaper:
         elif action[0] == "machines":
             p.toggle_menu(False)
             self._open_machines()
+        elif action[0] == "text_size":
+            p.text_step = (p.text_step + 1) % 3
+            p._ui_dirty = True
+            _save_prefs(text_step=p.text_step)
         elif action[0] == "mini":
             p.toggle_menu(False)
             self._set_mini(not p.mini)
@@ -957,7 +962,8 @@ class Wallpaper:
         self.painter.set_detail(detail_for(scale) if self.zoom else 1)
         world = self.painter.frame(fw, fh, now)
         self.view.layers[0] = [_texture(world), scale / self.painter.u, world]
-        uis = max(1.0, base)
+        # interfaz siempre a escala entera: con ×1.42 cada pixel de letra mide 1 o 2 y cuesta leer
+        uis = float(max(1, round(base)) + self.painter.text_step)
         self.painter.ui_ratio = scale / uis                # para ubicar los nombres del mapa en la interfaz
         ui, changed = self.painter.ui(int(-(-w // uis)), int(-(-h // uis)), now)
         if changed or self.view.layers[1][0] is None or self.view.layers[1][1] != uis:

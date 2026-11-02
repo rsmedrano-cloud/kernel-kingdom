@@ -469,6 +469,8 @@ UI = {
     "isle.reason.error": "error de conexión",
     "isle.reason.waiting": "esperando la primera respuesta",
     "isle.notyet": "Esa isla todavía no existe: {reason}.",
+    "menu.text_size": "Tamaño del texto: {size}",
+    "menu.text_sizes": ["normal", "grande", "enorme"],
     "menu.wallpaper": "Fondo de pantalla",
     "toast.wallpaper_on": "Fondo de pantalla activado ({monitors}). Arranca solo con la sesión.",
     "toast.wallpaper_off": "Fondo de pantalla desactivado. El mundo sigue corriendo.",
