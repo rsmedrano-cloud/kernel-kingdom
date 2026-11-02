@@ -152,6 +152,7 @@ def main():
             day = today
         state = build_state(world, snap, events, interval)
         state["islands"] = arch.summary(world)
+        state["isle_activity"] = snap.get("isles") or {}   # CPU y red de cada máquina del lab (barcos, clima)
         write_atomic(state_path, state)
         if t0 >= next_save:
             write_atomic(save_path, world.to_dict())

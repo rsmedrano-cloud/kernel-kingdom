@@ -210,7 +210,7 @@ class Archipelago:
                     clean = clean_name(name, words)        # nada del hostname ni del usuario en el mapa
                     key = f"{kind}:{clean}" if kind else clean
                     out[table][f"{iid}/{key}"] = dict(g, name=clean) if "name" in g else g
-            out["isles"][iid] = {"online": True, "cpu": r["cpu"]}
+            out["isles"][iid] = {"online": True, "cpu": r["cpu"], "net": round(r["net_rx"] + r["net_tx"], 2)}
         return out
 
     def _scrub_world(self, world, iid: str, words: set[str]):

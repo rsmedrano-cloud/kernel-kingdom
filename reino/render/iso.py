@@ -943,6 +943,26 @@ class Sprites:
             return s2, -9, -11
         return s, -9, -11
 
+    def _make_cog(self, flip: bool, color: tuple):
+        """Barco mercante: casco panzón con cajas de carga y una vela grande."""
+        s, ctx = _surface(16, 15)
+        pixels(ctx, [(2, 10)], rgb("#6b4a2b"), size=(12, 2))
+        pixels(ctx, [(3, 12)], rgb("#4a3020"), size=(10, 1))
+        pixels(ctx, [(1, 9), (14, 9)], rgb("#4a3020"), size=(1, 2))
+        pixels(ctx, [(4, 8), (11, 8)], rgb("#b8864b"), size=(2, 2))                       # carga
+        pixels(ctx, [(8, 1)], rgb("#3a2a1a"), size=(1, 9))                                 # mástil
+        pixels(ctx, [(9, 2)], color, size=(4, 5))                                          # vela
+        pixels(ctx, [(9, 7)], shade(color, 0.8), size=(4, 1))
+        pixels(ctx, [(8, 0)], rgb("#c0392b"), size=(2, 1))                                 # gallardete
+        if flip:
+            s2, c2 = _surface(16, 15)
+            c2.translate(16, 0)
+            c2.scale(-1, 1)
+            c2.set_source_surface(s, 0, 0)
+            c2.paint()
+            return s2, -8, -11
+        return s, -8, -11
+
     def _make_cloud(self, variant: int):
         rng = random.Random(variant)
         w = 28 + rng.randrange(20)
@@ -1783,7 +1803,7 @@ class Painter:
             place(o, "fields", i)
             water = self._water_next_to(i)
             if water:
-                self.fishers.append(water)
+                self.fishers.append((water, (cx, cy)))
         elif b in _LANDMARK_BLD:
             blit(("landmark", _LANDMARK_BLD[b], col), cx, cy)
             place(o, "market" if b == B.MARKET else "work", i)
@@ -2576,16 +2596,110 @@ class Painter:
 
     # -- vida (coordenadas de mundo) -------------------------------------------
 
+    # -- mar: rutas comerciales entre islas -----------------------------------------
+
+    def _sea_at(self, wx: float, wy: float) -> bool:
+        n = self.state["w"]
+        tx, ty = self.tile_at(wx, wy)
+        return not (0 <= tx < n and 0 <= ty < n) or self.state["terrain"][ty * n + tx] == WATER
+
+    def _home_ring(self):
+        """Óvalo alrededor de tu isla (el tráfico de descarga la rodea a ella, no al
+        archipiélago entero)."""
+        st = self.state
+        key = (id(self._bbox_terrain), st["w"])
+        if getattr(self, "_ring_key", None) != key:
+            n, h = st["w"], st.get("home_n") or st["w"]
+            pts = [self.tile_xy(i % n, i // n) for i, t in enumerate(st["terrain"])
+                   if t != WATER and i % n < h and i // n < h]
+            if not pts:
+                pts = [self.tile_xy(h // 2, h // 2)]
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            self._ring = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2 + 10,
+                          (max(xs) - min(xs)) / 2 + 14, (max(ys) - min(ys)) / 2 + 8)
+            self._ring_key = key
+        return self._ring
+
+    def _sea_routes(self) -> list[tuple[str | None, list[tuple[float, float]]]]:
+        """Rutas por agua entre el puerto de tu isla y el de cada isla del lab (y entre
+        islas vecinas). Se calculan una vez por cambio de terreno o de islas."""
+        st = self.state
+        isles = [(i["id"], i["c"]) for i in st.get("islands") or [] if i.get("c")]
+        key = (id(self._bbox_terrain), st["w"], tuple(i for i, _ in isles))
+        if getattr(self, "_routes_key", None) == key:
+            return self._routes_sea
+        self._routes_key, self._routes_sea = key, []
+        if not isles:
+            return []
+        n, h = st["w"], st.get("home_n") or st["w"]
+        terrain = st["terrain"]
+        coast = [i for i, t in enumerate(terrain) if t == WATER and any(terrain[j] != WATER for j in _neigh(i, n, n))]
+
+        def port(c):
+            cx, cy = c
+            return min(coast, key=lambda i: abs(i % n - cx) + abs(i // n - cy)) if coast else None
+
+        def sail(a, b):
+            prev = {a: None}
+            q = deque([a])
+            while q:
+                i = q.popleft()
+                if i == b:
+                    path = []
+                    while i is not None:
+                        path.append(i)
+                        i = prev[i]
+                    return path[::-1]
+                for j in _neigh(i, n, n):
+                    if j not in prev and terrain[j] == WATER:
+                        prev[j] = i
+                        q.append(j)
+            return None
+        ports = [(None, port((h // 2, h // 2)))] + [(iid, port(c)) for iid, c in isles]
+        pairs = [(ports[0], q) for q in ports[1:]] + list(zip(ports[1:], ports[2:]))
+        for (ia, a), (ib, b) in pairs:
+            if a is None or b is None:
+                continue
+            path = sail(a, b)
+            if path and len(path) > 3:
+                self._routes_sea.append((ib, [self._center(i) for i in path]))
+        return self._routes_sea
+
+    def _merchants(self, ctx, now: float):
+        """Barcos mercantes que van y vienen entre islas: más cuanto más tráfico de red
+        tiene la máquina de esa isla."""
+        st = self.state
+        act = st.get("isle_activity") or {}
+        local = (st.get("activity", {}).get("net_rx") or 0)
+        for r, (iid, pts) in enumerate(self._sea_routes()):
+            info = act.get(iid) or {}
+            if iid and not info.get("online", True):
+                continue                                       # isla caída: no sale nadie
+            net = info.get("net", 0.0) if iid else local
+            ships = 1 + min(2, int(math.log2(1 + net * 4)))
+            L = len(pts) - 1
+            period = max(20.0, L * 1.6)                         # ida y vuelta
+            for k in range(ships):
+                t = (now / period + k / ships + r * 0.37) % 1
+                u = t * 2 if t < 0.5 else 2 - t * 2
+                pos = u * L
+                j = min(int(pos), L - 1)
+                (ax, ay), (bx, by) = pts[j], pts[j + 1]
+                x, y = ax + (bx - ax) * (pos - j), ay + (by - ay) * (pos - j)
+                going_right = (bx - ax) * (1 if t < 0.5 else -1) > 0
+                self._put(ctx, ("cog", not going_right, rgb("#f2ead8") if k else GOLD),
+                          x, y + 3 + int(now * 1.5 + k + r) % 2)
+
+
     def _animate_world(self, ctx, now: float, night: float):
         st = self.state
         w = st["weather"]
         act = st.get("activity", {})
         n = st["w"]
 
-        # Barcos: tráfico de descarga (red entrante) rodeando la isla
+        # Barcos: tráfico de descarga (red entrante) rodeando tu isla
         ww, wh = self.world_size()
-        cx, cy = ww / 2, wh / 2 + 10
-        rx, ry = ww / 2 - MARGIN + 6, wh / 2 - MARGIN - 4
+        cx, cy, rx, ry = self._home_ring()
         ships = 1 + min(7, int(math.log2(1 + (act.get("net_rx") or 0) * 4) * 1.5))
         for k in range(ships):
             sign = 1 if k % 2 else -1
@@ -2596,10 +2710,22 @@ class Painter:
                 continue
             self._put(ctx, ("boat", math.sin(ang) * sign > 0, (1, 1, 1) if k else GOLD),
                       px, py + int(now * 2 + k) % 2)
-        # Pescadores amarrados al agua de sus muelles y barcos de las embajadas
-        boats = self.fishers[:10] + [e[3] for e in self.envoys if e[3]]
-        for k, (x, y) in enumerate(boats):
+        # Pescadores: salen del muelle mar adentro, pescan un rato y vuelven
+        for k, ((wx, wy), (dx, dy)) in enumerate(self.fishers[:12]):
+            vx, vy = wx - dx, wy - dy
+            t = (now / 55 + k * 0.29) % 1
+            out = 0.0 if t > 0.8 else min(1.0, t / 0.15) if t < 0.15 else 1.0 if t < 0.65 else 1 - (t - 0.65) / 0.15
+            reach = 3.2
+            while reach > 0 and not self._sea_at(wx + vx * reach, wy + vy * reach):
+                reach -= 0.8                                  # que no se meta en tierra
+            x, y = wx + vx * reach * out, wy + vy * reach * out
+            self._put(ctx, ("boat", vx * (1 if t < 0.65 else -1) < 0, rgb("#e8e0c8")), x, y + 3 + int(now * 1.5 + k) % 2)
+            if 0.2 < t < 0.6 and int(now * 2 + k) % 3 == 0:     # la red
+                pixels(ctx, [(x + (3 if vx > 0 else -3), y + 4)], (0.9, 0.95, 1.0), 0.7)
+        # Barcos de las embajadas
+        for k, (x, y) in enumerate(e[3] for e in self.envoys if e[3]):
             self._put(ctx, ("boat", k % 2 == 0, rgb("#e8e0c8")), x, y + 3 + int(now * 1.5 + k) % 2)
+        self._merchants(ctx, now)
 
         # Banderas flameando, aspas de molino, fuentes
         flap = int(now * 3) % 2
