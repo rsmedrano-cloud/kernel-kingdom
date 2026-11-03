@@ -235,7 +235,7 @@ class Lore:
 # -- crónica -----------------------------------------------------------------
 
 class Chronicle:
-    """Crónica del reino. Cada entrada: {t, tick, kind, text, x?, y?}."""
+    """Crónica del reino. Cada entrada: {t, tick, kind, text, k?, p?, x?, y?}."""
 
     MAX = 300
 
@@ -246,7 +246,8 @@ class Chronicle:
         self._cooldown: dict[str, int] = {}
 
     def add(self, tick: int, kind: str, text: str, where: tuple[int, int] | None = None,
-            cooldown_key: str | None = None, cooldown: int = 0, tkey: str | None = None):
+            cooldown_key: str | None = None, cooldown: int = 0, tkey: str | None = None,
+            params: dict | None = None):
         if cooldown_key:
             if tick < self._cooldown.get(cooldown_key, -1):
                 return
@@ -254,6 +255,8 @@ class Chronicle:
         e = {"t": round(time.time()), "tick": tick, "kind": kind, "text": polish(text)}
         if tkey:
             e["k"] = tkey                # qué plantilla fue (para resumir el día)
+        if params:
+            e["p"] = params              # nombres propios del suceso (para titular el día en los Anales)
         if where:
             e["x"], e["y"] = where
         self.entries.append(e)

@@ -312,6 +312,9 @@ class Wallpaper:
             self._check_update({}, manual=True)
         elif action[0] == "language":
             self._switch_language(now)
+        elif action[0] == "video":
+            p.toggle_menu(False)
+            self._video(confirmed=False)
         elif action[0] == "timelapse":
             p.toggle_menu(False)
             self._export_timelapse()
@@ -386,6 +389,8 @@ class Wallpaper:
             _save_prefs(wallpaper_asked=True)
             if action == "wp_yes":
                 self._set_wallpaper(True)
+        elif action == "video_yes":
+            self._video(confirmed=True)
         elif action == "relaunch":
             from .. import cli
             cli.relaunch_window()
@@ -628,6 +633,50 @@ class Wallpaper:
         folder = Path(pics) / "Kernel Kingdom"
         folder.mkdir(parents=True, exist_ok=True)
         return folder
+
+    def _video(self, confirmed: bool):
+        """El capítulo del día narrado sobre el mapa. La primera vez pregunta antes de
+        bajar Piper y la voz (~90 MB); después es todo local."""
+        import threading
+        from .. import config, video
+        cfg = config.load()
+        missing = video.missing_downloads(cfg)
+        if missing and not confirmed:
+            self.painter.show_dialog(ui("menu.video"), [(ui("dialog.video.yes"), "video_yes"),
+                                                       (ui("dialog.video.no"), "close")],
+                                     ui("video.download", what=", ".join(missing)))
+            self._render()
+            return
+        folder = self._pictures()
+        last = [0.0]
+
+        def progress(msg):
+            if time.monotonic() - last[0] > 1.0:          # sin inundar la ventana de avisos
+                last[0] = time.monotonic()
+                GLib.idle_add(lambda: (self.painter.toast(msg, time.monotonic(), secs=4), self._render()) and False)
+
+        def work():
+            try:
+                out, err = video.make(None, folder, cfg, progress), None
+            except Exception as e:                        # que la ventana no muera por esto
+                out, err = None, str(e)
+            GLib.idle_add(done, out, err)
+
+        def done(out, err):
+            now = time.monotonic()
+            if out:
+                self.painter.toast(ui("video.done", path=str(out).replace(str(Path.home()), "~")), now, secs=10)
+                try:
+                    Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
+                except GLib.Error:
+                    pass
+            else:
+                self.painter.toast(ui("video.failed", detail=err), now, ok=False, secs=10)
+            self._render()
+            return GLib.SOURCE_REMOVE
+        self.painter.toast(ui("video.voice"), time.monotonic(), secs=6)
+        self._render()
+        threading.Thread(target=work, daemon=True).start()
 
     def _export_timelapse(self):
         """GIF de cómo cambiaron las fronteras hoy (en otro hilo: tarda unos segundos)."""

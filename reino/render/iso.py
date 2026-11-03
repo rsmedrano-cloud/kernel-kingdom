@@ -2055,6 +2055,7 @@ class Painter:
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.share')}", TEXT, ("share",))
         add(f"  {ui('menu.timelapse')}", TEXT, ("timelapse",))
+        add(f"  {ui('menu.video')}", TEXT, ("video",))
         add(f"  {ui('menu.language')}", TEXT, ("language",))
         add(f"  {ui('menu.machines')}", TEXT, ("machines",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))

@@ -148,7 +148,10 @@ def main():
         timelapse.record(world)                            # foto de las fronteras cada 10 min
         today = time.strftime("%Y-%m-%d")
         if today != day:                                   # cambió el día: se escribe el relato de ayer
-            story.export(day, world.kingdom, world.lore.era_name(world.era))
+            # en otro hilo: con el bardo (ollama) puede tardar y el mundo no se detiene
+            snapshot = json.loads(json.dumps(world.to_dict(full=False)))   # copia: el hilo no toca el mundo vivo
+            threading.Thread(target=story.export, args=(day, world.kingdom, world.lore.era_name(world.era), snapshot),
+                             daemon=True).start()
             day = today
         state = build_state(world, snap, events, interval)
         state["islands"] = arch.summary(world)
