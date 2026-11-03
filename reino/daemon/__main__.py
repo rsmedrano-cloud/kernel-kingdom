@@ -100,6 +100,7 @@ def main():
     probe = SystemProbe(cfg)
     inputs = InputActivity()
     world = World(cfg) if args.reset else World.load_or_new(cfg, save_path)
+    world.note_sleep(time.time())                         # ¿cuánto durmió tu isla (la PC apagada)?
     stop = threading.Event()
 
     if args.once:

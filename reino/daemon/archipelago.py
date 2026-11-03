@@ -200,6 +200,9 @@ class Archipelago:
             scale = world.isle_scale(isl.snap.get("ram_total_mb"))   # isla del tamaño de su máquina
             if iid not in world.isles:
                 world.add_isle(iid, island_name(self.cfg, iid), scale)
+            elif isl.snap.get("rebooted") and not isl.snap.get("_told"):
+                world.note_isle_age(iid, 0)                    # el servidor se reinició: edad nueva en su isla
+                isl.snap["_told"] = True
             elif abs(world.isles[iid].get("scale", 1.0) - scale) >= 0.08 \
                     or world.isles[iid].get("shape_v") != world.SHAPE_V:
                 world.reshape_isle(iid, scale)

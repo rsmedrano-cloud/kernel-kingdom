@@ -189,6 +189,7 @@ timeout = 180
 engine = "kokoro"         # "kokoro" (natural) o "piper" (más liviano, más robótico)
 kokoro_model = "full"     # "full" (310 MB, mejor) o "light" (88 MB)
 speed = 0.92              # velocidad de lectura (Kokoro)
+depth = 0.88              # voz de narrador: 1 = natural, menos = más grave (0.75 a 1)
 # Kokoro: em_alex, ef_dora, em_santa (castellano); bm_george, bm_fable, am_onyx, am_michael... (inglés)
 # Piper: es_ES-davefx-medium, es_MX-ald-medium, es_AR-daniela-high, en_US-ryan-medium... (rhasspy/piper-voices)
 voice_es = "em_alex"

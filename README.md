@@ -92,7 +92,11 @@ silences the strongholds, realms dissolve, others are reborn from the ashes, and
 "with the peoples' revival came ambition" and its wars, until peace. Events are
 grouped with their names ("Zenhar, Zorravia and Claudel dissolved, and their people
 loaded their carts into exile"), and the chapter is titled after the biggest thing
-that happened. Chapters pile up into a book (`kernel-kingdom annals`).
+that happened. The world remembers: each chapter knows how many days a war has
+lasted, that it is the third between the same two realms, that your island slept
+eight hours last night (your PC sleeps, the lab's servers never do) or that a
+server's reboot opened a new age on its island. Chapters pile up into a book
+(`kernel-kingdom annals`).
 
 **The chronicler** (optional): a language model takes that ordered draft and writes
 it as epic prose: [ollama](https://ollama.com), or any OpenAI-compatible server
