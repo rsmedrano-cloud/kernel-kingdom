@@ -12,7 +12,9 @@ el capítulo en prosa. Si no está o falla, queda el relato armado acá.
 """
 import datetime as dt
 import json
+import time
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
 from . import i18n, paths
@@ -80,6 +82,14 @@ def world_name(world: dict) -> str:
     return world.get("kingdom", "")
 
 
+def world_the(world: dict, name: str) -> str:
+    """Con artículo, para el relato: 'el Archipiélago de X' (-> 'del'), 'the X Archipelago'."""
+    if world.get("isles"):
+        from .daemon.lore import Lore
+        return words("archipelago_the").format(name=Lore({}, world.get("seed", 1337)).region("archipelago"))
+    return name
+
+
 def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
@@ -124,7 +134,7 @@ def chapter(day: str, entries: list[dict], world: dict | None = None, n: int | N
     title = _title(entries, name)
     date = dt.date.fromisoformat(day)
     headings = words("annals_headings")
-    sections, narration = [], []
+    sections = []
 
     previously = []
     if prev:
@@ -161,8 +171,6 @@ def chapter(day: str, entries: list[dict], world: dict | None = None, n: int | N
         if not texts:
             continue
         sections.append({"theme": theme, "heading": headings[theme], "texts": texts})
-        for e in sorted(lines[:2], key=lambda e: e.get("t", 0)):     # para la voz: lo más importante
-            narration.append({"text": e["text"], "where": (e["x"], e["y"]) if "x" in e else None})
 
     epilogue = []
     realms = sorted((f for f in world.get("factions", []) if f.get("alive") and f.get("kind") == "browser"),
@@ -177,53 +185,220 @@ def chapter(day: str, entries: list[dict], world: dict | None = None, n: int | N
     epilogue.append(words("annals_end").format(n=n, world=name))
 
     head = words("annals_chapter").format(n=n, title=title)
-    narration = ([{"text": f"{name}. {head}.", "where": None}]
-                 + [{"text": t, "where": None} for t in previously[:1]]
-                 + narration[:8]
-                 + [{"text": t, "where": None} for t in epilogue[-2:]])
+    story_text = prose(entries, world, day, name)
+    narration = ([{"text": f"{head}.", "where": None}]
+                 + [{"text": t, "where": None} for t in _sentences(" ".join(story_text))])
     return {"day": day, "n": n, "title": title, "world": name, "date": date.strftime("%d/%m/%Y"),
-            "previously": previously, "sections": sections, "epilogue": epilogue, "narration": narration}
+            "previously": previously, "sections": sections, "epilogue": epilogue, "narration": narration,
+            "prose": story_text}
+
+
+# -- el relato en prosa: actos, causas y consecuencias ------------------------------
+
+def _names(entries: list[dict], keys: set[str], param: str, limit: int = 4) -> list[str]:
+    """Nombres propios distintos de ciertos sucesos, en el orden en que pasaron."""
+    out = []
+    for e in entries:
+        v = (e.get("p") or {}).get(param)
+        if e.get("k") in keys and v and v not in out:
+            out.append(v)
+    return out[:limit]
+
+
+def _list(items: list[str]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + words("annals_and") + items[-1]
+
+
+def _plural(key: str, items: list[str], **kw) -> str | None:
+    """Plantilla singular o plural según cuántos nombres haya."""
+    if not items:
+        return None
+    one, many = words(key)
+    return _cap((one if len(items) == 1 else many).format(x=items[0], list=_list(items), **kw))
+
+
+def _act(entries: list[dict], first: bool, previous: set[str]) -> tuple[list[str], set[str]]:
+    """Un acto del día: las cosas en el orden en que se encadenan (cataclismo -> caídas ->
+    renacer -> ambición y guerras -> paz), y después lo que lo acompaña (obras, héroes,
+    el Soberano, el cielo). Devuelve las frases y qué tipos de cosas pasaron."""
+    k = Counter(e.get("k") for e in entries)
+    out, seen = [], set()
+    era = _names(entries, {"era.new"}, "era", 1)
+    if era:
+        out.append(words("annals_cataclysm").format(era=era[0]))
+        seen.add("era")
+    god = next(((e.get("p") or {}) for e in entries if e.get("k") == "era.kernel"), None)
+    if god and god.get("kernel"):
+        out.append(words("annals_new_god").format(old=god.get("old", "?"), new=god["kernel"]))
+    forts = _names(entries, {"fort.silent"}, "the_fort")
+    if forts and (era or k["fort.silent"] >= 3):
+        out.append(_plural("annals_forts_silent", forts, cause=words("annals_because") if era else ""))
+    falls = _names(entries, {"fall"}, "realm")
+    if falls:
+        out.append(_plural("annals_falls", falls))
+        seen.add("fall")
+    reborn = _names(entries, {"dyn.reborn"}, "realm") + _names(entries, {"found.realm", "found.app"}, "realm")
+    if reborn:
+        key = "annals_reborn" if ("fall" in seen or "fall" in previous) else "annals_founded"
+        out.append(_plural(key, reborn))
+        seen.add("rise")
+    wars = _names(entries, {"war.declare", "war.start"}, "war")
+    if wars:
+        key = "annals_wars_after" if "rise" in seen else "annals_wars"
+        out.append(_plural(key, wars))
+        seen.add("war")
+    battles = [e for e in entries if e.get("k") == "battle"]
+    if len(battles) >= 3:
+        winners = Counter((e.get("p") or {}).get("a") for e in battles if (e.get("p") or {}).get("a"))
+        top = winners.most_common(1)[0][0] if winners else None
+        out.append(words("annals_battles").format(n=len(battles), realm=top) if top
+                   else words("annals_battles_plain").format(n=len(battles)))
+    sacked = _names(entries, {"capital.sacked"}, "b")
+    if sacked:
+        out.append(_plural("annals_sacked", sacked))
+    peace = _names(entries, {"peace", "power.tregua"}, "war")
+    if peace:
+        out.append(_plural("annals_peace_after" if "war" in seen or "war" in previous else "annals_peace", peace))
+        seen.add("peace")
+    # lo que acompaña: textos de la crónica tal cual (ya son buenas frases), lo más jugoso
+    flavor = [e for e in entries if e.get("kind") in ("heroe", "obra", "poder", "fe", "naturaleza", "calor",
+                                                       "storm", "eruption", "mundo")
+              and PRIORITY.get(e.get("k", ""), 10) >= 30]
+    flavor.sort(key=lambda e: -PRIORITY.get(e.get("k", ""), 10))
+    picked = sorted(flavor[:3], key=lambda e: e.get("t", 0))
+    if picked:
+        heroes = [e for e in picked if e.get("kind") == "heroe"]
+        if out:                                        # conector variado, para no repetir la misma frase
+            options = words("annals_heroes_open") if heroes else words("annals_meanwhile")
+            out.append(options[len(previous) % len(options)])
+        out += [e["text"] for e in picked]
+    return out, seen
+
+
+def _opening(entries: list[dict], world: str, day: str) -> str:
+    d = dt.date.fromisoformat(day)
+    month = words("months")[d.month - 1]
+    n = len(entries)
+    if n < 40:
+        return words("annals_open_calm").format(world=world, day=d.day, month=month, year=d.year)
+    from .story import count_parts
+    kinds = [p.split(" ", 1)[1] for p in count_parts(entries)[:4]]
+    rounded = int(str(n)[:2]) * 10 ** (len(str(n)) - 2) if n >= 100 else n
+    return words("annals_open").format(world=world, day=d.day, month=month, year=d.year, n=rounded,
+                                       kinds=_list(kinds) if kinds else words("annals_things"))
+
+
+def prose(entries: list[dict], world: dict, day: str, name: str) -> list[str]:
+    """El día como relato: apertura de cronista, un párrafo por momento del día (con lo
+    que lo encadena con el anterior) y un cierre."""
+    the_world = world_the(world, name)
+    paragraphs = [_opening(entries, the_world, day)]
+    open_wars = [w["name"] for w in (world.get("wars") or {}).values()
+                 if w.get("start", 0) < min((e.get("tick", 0) for e in entries), default=0)]
+    if open_wars:
+        paragraphs[0] += " " + words("annals_open_wars").format(wars=_list(open_wars[:2]))
+    parts = words("story_parts")
+    previous: set[str] = set()
+    acts = []
+    for k, (start, _) in enumerate(parts):
+        end = parts[k + 1][0] if k + 1 < len(parts) else 24
+        mine = [e for e in entries if start <= time.localtime(e["t"]).tm_hour < end]
+        if mine:
+            acts.append((k, mine))
+    for idx, (k, mine) in enumerate(acts):
+        lines, seen = _act(mine, idx == 0, previous)
+        if not lines:
+            continue
+        opener = words("annals_act_open")[k] if idx else ""
+        first = lines[0]
+        if opener:
+            word, _, rest = first.partition(" ")
+            if word.rstrip(",") in words("annals_soft_starts"):          # "Pronto, ..." ya lo dice el conector
+                first = rest if word.endswith(",") else first
+            starts = first.split(" ", 1)[0]
+            if starts in words("annals_lower_starts"):                   # nunca un nombre propio
+                first = first[:1].lower() + first[1:]
+            first = opener + " " + first
+        paragraphs.append(" ".join([first] + lines[1:]))
+        previous |= seen
+    closes = words("annals_close")
+    paragraphs.append(closes[sum(map(ord, day)) % len(closes)].format(world=the_world))
+    return [i18n.polish(_cap(p)) for p in paragraphs]
 
 
 def render(ch: dict, markdown: bool = True, bard_text: str | None = None) -> str:
     head = words("annals_chapter").format(n=ch["n"], title=ch["title"])
     out = [f"## {head}" if markdown else head.upper(), "", f"*{ch['world']} — {ch['date']}*" if markdown
            else f"{ch['world']} — {ch['date']}", ""]
-    if ch["previously"]:
-        out += [(" ".join(ch["previously"])), ""]
-    if bard_text:
-        out += [p.strip() for p in bard_text.strip().split("\n") if p.strip()]
-        out += ["", f"### {words('annals_details')}" if markdown else words("annals_details").upper(), ""]
-    for s in ch["sections"]:
-        out += [f"### {s['heading']}" if markdown else s["heading"].upper(), ""]
-        out += [" ".join(s["texts"]), ""]
+    body = [p.strip() for p in bard_text.strip().split("\n") if p.strip()] if bard_text else ch["prose"]
+    for para in body:
+        out += [para, ""]
     out += [" ".join(ch["epilogue"]), ""]
+    if markdown:                                         # en el libro, también el detalle por tema
+        out += [f"### {words('annals_details')}", ""]
+        for s in ch["sections"]:
+            out += [f"**{s['heading']}.** " + " ".join(s["texts"]), ""]
     return "\n".join(out)
+
+
+def _sentences(text: str) -> list[str]:
+    """Para la voz y los subtítulos: frases de largo razonable."""
+    import re
+    out = []
+    for part in re.split(r"(?<=[.!?])\s+", text):
+        if part.strip():
+            out.append(part.strip())
+    return out
 
 
 # -- bardo opcional (ollama) -------------------------------------------------------
 
 def bard(ch: dict, cfg: dict) -> str | None:
-    """Prosa de un modelo local. Solo si [bard] enabled = true; los hechos no salen del
-    servidor que configures (por defecto, esta misma PC)."""
+    """Prosa de un modelo de lenguaje. Solo si [bard] enabled = true. Recibe el borrador
+    ya ordenado (actos, causas, nombres) y lo escribe con voz de cronista. Los hechos solo
+    van a la dirección configurada (por defecto, esta misma PC)."""
+    import os
     bc = cfg.get("bard", {})
     if not bc.get("enabled"):
         return None
-    facts = [t for s in ch["sections"] for t in s["texts"]][:30]
-    prompt = raw("annals.bard_prompt").format(world=ch["world"], title=ch["title"], facts="\n".join(f"- {f}" for f in facts))
-    body = json.dumps({"model": bc.get("model", "llama3.2"), "prompt": prompt, "stream": False,
-                       "options": {"temperature": 0.8}}).encode()
-    req = urllib.request.Request(bc.get("url", "http://127.0.0.1:11434").rstrip("/") + "/api/generate", data=body,
-                                 headers={"Content-Type": "application/json"})
+    prompt = raw("annals.bard_prompt").format(world=ch["world"], title=ch["title"],
+                                              previously=" ".join(ch["previously"]) or "-",
+                                              draft="\n\n".join(ch["prose"]))
+    url = bc.get("url", "http://127.0.0.1:11434").rstrip("/")
+    headers = {"Content-Type": "application/json"}
+    if bc.get("provider", "ollama") == "openai":           # cualquier servidor compatible (/v1/chat/completions)
+        key = os.environ.get(bc.get("api_key_env") or "", "")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        body = {"model": bc.get("model", ""), "temperature": 0.8,
+                "messages": [{"role": "user", "content": prompt}]}
+        endpoint = url + ("/chat/completions" if url.endswith("/v1") else "/v1/chat/completions")
+    else:
+        body = {"model": bc.get("model", "llama3.2"), "prompt": prompt, "stream": False,
+                "options": {"temperature": 0.8}}
+        endpoint = url + "/api/generate"
+    req = urllib.request.Request(endpoint, data=json.dumps(body).encode(), headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=bc.get("timeout", 180)) as r:
-            text = json.loads(r.read().decode()).get("response", "").strip()
-        return text or None
+            data = json.loads(r.read().decode())
     except (OSError, ValueError):
         return None
+    if "choices" in data:
+        text = ((data["choices"] or [{}])[0].get("message") or {}).get("content", "")
+    else:
+        text = data.get("response", "")
+    text = text.strip()
+    return text if len(text) > 200 else None              # una respuesta vacía o cortada no sirve
 
 
 # -- el libro ---------------------------------------------------------------------
+
+def bard_text(day: str) -> str | None:
+    f = folder() / f"{day}.bard.txt"
+    return f.read_text(encoding="utf-8") if f.exists() else None
+
 
 def write(day: str, entries: list[dict], cfg: dict | None = None, world: dict | None = None) -> dict | None:
     """Escribe el capítulo del día (md + txt), lo anota en el índice y rearma el libro.
@@ -234,6 +409,8 @@ def write(day: str, entries: list[dict], cfg: dict | None = None, world: dict | 
     n = index.get(day, {}).get("n") or 1 + sum(1 for d in index if d < day)
     ch = chapter(day, entries, world, n=n)
     prose = bard(ch, cfg or {}) if cfg else None
+    if prose:
+        (folder() / f"{day}.bard.txt").write_text(prose, encoding="utf-8")   # el video la reusa
     d = folder()
     (d / f"{day}.md").write_text(render(ch, True, prose), encoding="utf-8")
     (d / f"{day}.txt").write_text(render(ch, False, prose), encoding="utf-8")

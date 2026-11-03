@@ -85,20 +85,27 @@ Every day's borders, as a GIF (Menu > World > Timelapse):
 
 ## The Annals and the video of the day
 
-Every day becomes a **chapter of the Annals**: titled after its biggest event ("The
-Sack of Zenhar", "The Coming of the Dragon Gwenia"), opening with what was left
-unresolved the day before, then wars, crowns, works, heroes, the Sovereign's will
-and the world, with the important first and the repetitive summed up ("There were
-also 85 wars, 91 battles…"), and an epilogue with the mightiest realms. Chapters
-pile up into a book (`kernel-kingdom annals`). Optionally a local model through
-[ollama](https://ollama.com) rewrites each chapter as prose (`[bard]` in the config;
-the day's facts only go to the address you set, by default this same PC).
+Every day becomes a **chapter of the Annals**, told the way a chronicler would: it
+opens with "Hear the chronicle of…", follows the day in acts (before dawn, the
+morning, the afternoon, the dusk) and links causes and consequences: a reboot
+silences the strongholds, realms dissolve, others are reborn from the ashes, and
+"with the peoples' revival came ambition" and its wars, until peace. Events are
+grouped with their names ("Zenhar, Zorravia and Claudel dissolved, and their people
+loaded their carts into exile"), and the chapter is titled after the biggest thing
+that happened. Chapters pile up into a book (`kernel-kingdom annals`).
+
+**The chronicler** (optional): a language model takes that ordered draft and writes
+it as epic prose: [ollama](https://ollama.com), or any OpenAI-compatible server
+(llama.cpp, LM Studio, vLLM, or a hosted service). `[bard]` in the config; the day's
+facts only go to the address you set, and an API key is read from an environment
+variable, never from the config.
 
 **The video of the day** (Menu > World, or `kernel-kingdom video`): the chapter read
-by a narrator ([Piper](https://github.com/rhasspy/piper), a free voice that runs on
-your CPU) while the camera flies to where each thing happened, with subtitles. Piper
-and the voice are downloaded once (~90 MB, it asks first); after that everything is
-local. A one-minute video takes seconds to make. Voices: `[video]` in the config.
+by a local voice while the camera flies to the realm, island or region each sentence
+names, with subtitles. The default voice is [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
+(natural, runs on your CPU, installed in its own environment); [Piper](https://github.com/rhasspy/piper)
+is a lighter option. Everything is downloaded once (it asks first) and then works
+offline. Voices and engine: `[video]` in the config.
 
 ## The story of the day
 

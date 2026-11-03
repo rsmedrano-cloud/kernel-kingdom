@@ -86,20 +86,27 @@ Las fronteras de cada día, en un GIF (Menú > Mundo > Timelapse):
 
 ## Los Anales y el video del día
 
-Cada día se vuelve un **capítulo de los Anales**: con título según lo más grande
-que pasó ("El Saqueo de Zenhar", "La Llegada del Dragón Gwenia"), un "en el capítulo
-anterior" con lo que quedó abierto, después guerras, coronas, obras, héroes, los
-designios del Soberano y el mundo, con lo importante primero y lo repetido resumido
-("Además hubo 85 guerras, 91 batallas…"), y un epílogo con los reinos más poderosos.
-Los capítulos se juntan en un libro (`kernel-kingdom annals`). Opcional: un modelo
-local vía [ollama](https://ollama.com) reescribe cada capítulo en prosa (`[bard]` en la
-config; los hechos del día solo van a la dirección que pongas, por defecto esta PC).
+Cada día se vuelve un **capítulo de los Anales**, contado como lo haría un cronista:
+abre con "Escuchad la crónica de…", sigue el día en actos (la madrugada, la mañana, la
+tarde, el ocaso) y encadena causas y consecuencias: un reinicio apaga los bastiones,
+los reinos se disuelven, otros renacen de las cenizas y "con el resurgir de los pueblos
+estalló la ambición", con sus guerras, hasta la paz. Los sucesos se agrupan con sus
+nombres ("Zenhar, Zorravia y Claudel se disolvieron, y sus gentes cargaron las carretas
+hacia el exilio") y el capítulo se titula según lo más grande que pasó. Los capítulos se
+juntan en un libro (`kernel-kingdom annals`).
 
-**El video del día** (Menú > Mundo, o `kernel-kingdom video`): el capítulo leído por
-un narrador ([Piper](https://github.com/rhasspy/piper), una voz libre que corre en tu
-CPU) mientras la cámara va a donde pasó cada cosa, con subtítulos. Piper y la voz se
-bajan una sola vez (~90 MB, pregunta antes); después todo es local. Un video de un
-minuto se arma en segundos. Voces: `[video]` en la config.
+**El cronista** (opcional): un modelo de lenguaje toma ese borrador ordenado y lo escribe
+en prosa épica: [ollama](https://ollama.com), o cualquier servidor compatible con la API de
+OpenAI (llama.cpp, LM Studio, vLLM, o un servicio). `[bard]` en la config; los hechos del
+día solo van a la dirección que pongas, y la clave se lee de una variable de entorno, nunca
+de la config.
+
+**El video del día** (Menú > Mundo, o `kernel-kingdom video`): el capítulo leído por una voz
+local mientras la cámara va al reino, la isla o la región que nombra cada frase, con
+subtítulos. La voz por defecto es [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
+(natural, corre en tu CPU, se instala en su propio entorno); [Piper](https://github.com/rhasspy/piper)
+es la opción liviana. Todo se baja una sola vez (pregunta antes) y después funciona sin
+internet. Voces y motor: `[video]` en la config.
 
 ## La historia del día
 

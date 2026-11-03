@@ -175,15 +175,21 @@ key = "~/.ssh/kernel-kingdom"
 every = 20            # segundos entre consultas a cada máquina
 
 [bard]
-# Opcional: un modelo local (ollama) reescribe cada capítulo de los Anales en prosa.
-# Los hechos del día se mandan solo a esta dirección (por defecto, esta misma PC).
+# Opcional: un modelo de lenguaje escribe cada capítulo de los Anales con voz de cronista,
+# a partir del relato ya ordenado. Los hechos del día se mandan solo a esta dirección.
 enabled = false
-url = "http://127.0.0.1:11434"
+provider = "ollama"            # "ollama", u "openai" para cualquier servidor compatible (llama.cpp, LM Studio, vLLM...)
+url = "http://127.0.0.1:11434" # con "openai": p.ej. "http://127.0.0.1:8080/v1"
 model = "llama3.2"
+api_key_env = ""               # con "openai": nombre de la variable de entorno que tiene la clave (nunca la clave acá)
 timeout = 180
 
 [video]
-# Voz del narrador (Piper). Se baja una sola vez a ~/.local/share/kernel-kingdom/voice.
-# Otras: es_MX-ald-medium, es_AR-daniela-high, en_GB-alan-medium... (rhasspy/piper-voices)
-voice_es = "es_ES-davefx-medium"
-voice_en = "en_US-ryan-medium"
+# Voz del narrador, local (se baja una sola vez a ~/.local/share/kernel-kingdom/voice).
+engine = "kokoro"         # "kokoro" (natural) o "piper" (más liviano, más robótico)
+kokoro_model = "full"     # "full" (310 MB, mejor) o "light" (88 MB)
+speed = 0.92              # velocidad de lectura (Kokoro)
+# Kokoro: em_alex, ef_dora, em_santa (castellano); bm_george, bm_fable, am_onyx, am_michael... (inglés)
+# Piper: es_ES-davefx-medium, es_MX-ald-medium, es_AR-daniela-high, en_US-ryan-medium... (rhasspy/piper-voices)
+voice_es = "em_alex"
+voice_en = "bm_george"

@@ -47,7 +47,8 @@ POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "d
 NO_SHIELD = {"tower", "mine", "lighthouse", "embassy", "wonder"}
 WONDERS = ("coloso", "coliseo", "observatorio", "jardines")
 # nombres propios que se guardan con cada suceso (realm/a/b: reinos; war; place; name; hero; title; isle)
-ANNAL_PARAMS = {"realm", "a", "b", "war", "place", "name", "hero", "title", "isle", "gold", "n", "winner", "dir"}
+ANNAL_PARAMS = {"realm", "a", "b", "war", "place", "name", "hero", "title", "isle", "gold", "n", "winner", "dir",
+                "era", "kernel", "old", "the_fort", "the_full", "ruler", "tiles", "job"}
 ISLE_SIZE = 36                 # lado de la isla de una máquina remota (la tuya mide [world] size)
 
 
