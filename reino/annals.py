@@ -219,62 +219,145 @@ def _plural(key: str, items: list[str], **kw) -> str | None:
     return _cap((one if len(items) == 1 else many).format(x=items[0], list=_list(items), **kw))
 
 
-def _act(entries: list[dict], first: bool, previous: set[str]) -> tuple[list[str], set[str]]:
-    """Un acto del día: las cosas en el orden en que se encadenan (cataclismo -> caídas ->
-    renacer -> ambición y guerras -> paz), y después lo que lo acompaña (obras, héroes,
-    el Soberano, el cielo). Devuelve las frases y qué tipos de cosas pasaron."""
-    k = Counter(e.get("k") for e in entries)
-    out, seen = [], set()
+def _ordinal(n: int) -> str:
+    ords = words("ordinals")
+    return ords[n - 1] if 0 < n <= len(ords) else words("ordinal_n").format(n=n)
+
+
+def _isles(world: dict) -> tuple[str, dict, dict]:
+    """(nombre de tu isla, id -> nombre de cada isla del lab, reino -> nombre de su isla)."""
+    home = world.get("kingdom", "")
+    names = {iid: info.get("name", "") for iid, info in (world.get("isles") or {}).items()}
+    of = {f["realm"]: names.get(f.get("isle"), home) for f in world.get("factions", [])}
+    return home, names, of
+
+
+def _home_night(entries: list[dict], home: str, of: dict) -> list[str]:
+    """Tu isla durmió (la PC estuvo apagada) y/o empezó una edad nueva: lo que cayó y renació."""
+    out = []
+    slept = next(((e.get("p") or {}) for e in entries if e.get("k") == "home.slept"), None)
     era = _names(entries, {"era.new"}, "era", 1)
+    if slept:
+        out.append(words("annals_slept").format(isle=home, hours=slept.get("hours", "?")))
     if era:
         out.append(words("annals_cataclysm").format(era=era[0]))
-        seen.add("era")
     god = next(((e.get("p") or {}) for e in entries if e.get("k") == "era.kernel"), None)
     if god and god.get("kernel"):
         out.append(words("annals_new_god").format(old=god.get("old", "?"), new=god["kernel"]))
+    if not out:
+        return []
     forts = _names(entries, {"fort.silent"}, "the_fort")
-    if forts and (era or k["fort.silent"] >= 3):
-        out.append(_plural("annals_forts_silent", forts, cause=words("annals_because") if era else ""))
-    falls = _names(entries, {"fall"}, "realm")
+    if forts:
+        out.append(_plural("annals_forts_silent", forts, cause=words("annals_because")))
+    falls = [r for r in _names(entries, {"fall"}, "realm", 8) if of.get(r, home) == home][:4]
     if falls:
         out.append(_plural("annals_falls", falls))
-        seen.add("fall")
-    reborn = _names(entries, {"dyn.reborn"}, "realm") + _names(entries, {"found.realm", "found.app"}, "realm")
+    reborn = [r for r in _names(entries, {"dyn.reborn", "found.realm", "found.app"}, "realm", 8)
+              if of.get(r, home) == home][:4]
     if reborn:
-        key = "annals_reborn" if ("fall" in seen or "fall" in previous) else "annals_founded"
-        out.append(_plural(key, reborn))
-        seen.add("rise")
-    wars = _names(entries, {"war.declare", "war.start"}, "war")
-    if wars:
-        key = "annals_wars_after" if "rise" in seen else "annals_wars"
-        out.append(_plural(key, wars))
-        seen.add("war")
-    battles = [e for e in entries if e.get("k") == "battle"]
-    if len(battles) >= 3:
-        winners = Counter((e.get("p") or {}).get("a") for e in battles if (e.get("p") or {}).get("a"))
-        top = winners.most_common(1)[0][0] if winners else None
-        out.append(words("annals_battles").format(n=len(battles), realm=top) if top
-                   else words("annals_battles_plain").format(n=len(battles)))
-    sacked = _names(entries, {"capital.sacked"}, "b")
-    if sacked:
-        out.append(_plural("annals_sacked", sacked))
-    peace = _names(entries, {"peace", "power.tregua"}, "war")
-    if peace:
-        out.append(_plural("annals_peace_after" if "war" in seen or "war" in previous else "annals_peace", peace))
-        seen.add("peace")
-    # lo que acompaña: textos de la crónica tal cual (ya son buenas frases), lo más jugoso
-    flavor = [e for e in entries if e.get("kind") in ("heroe", "obra", "poder", "fe", "naturaleza", "calor",
-                                                       "storm", "eruption", "mundo")
-              and PRIORITY.get(e.get("k", ""), 10) >= 30]
-    flavor.sort(key=lambda e: -PRIORITY.get(e.get("k", ""), 10))
-    picked = sorted(flavor[:3], key=lambda e: e.get("t", 0))
-    if picked:
-        heroes = [e for e in picked if e.get("kind") == "heroe"]
-        if out:                                        # conector variado, para no repetir la misma frase
-            options = words("annals_heroes_open") if heroes else words("annals_meanwhile")
-            out.append(options[len(previous) % len(options)])
-        out += [e["text"] for e in picked]
-    return out, seen
+        out.append(_plural("annals_reborn", reborn))
+    return out
+
+
+def _wars(entries: list[dict], today: dict, hist: dict, of: dict, home: str, day: str) -> list[str]:
+    """Las guerras con su historia: nuevas (¿cruzaron el mar? ¿cuántas van entre ellos?),
+    las que siguen (¿cuántos días llevan?) y las que terminaron (¿quién ganó?)."""
+    wars = today.get("wars", {})
+    if not wars:
+        return []
+    ranked = sorted(wars.items(), key=lambda kv: (-(kv[1]["declared"] or kv[1]["ended"]), -kv[1]["battles"]))
+    out, told = [], 0
+    for name, w in ranked[:3]:
+        a, b = w.get("a"), w.get("b")
+        h = hist["wars"].get(name, {})
+        started_today = h.get("start") == day
+        if started_today and a and b:
+            ia, ib = of.get(a, home), of.get(b, home)
+            if ia != ib:
+                line = words("annals_war_sail").format(isle_a=ia, isle_b=ib, a=a, b=b, war=name)
+            else:
+                line = words("annals_war_new").format(a=a, b=b, war=name)
+            feud = hist["feuds"].get(tuple(sorted((a, b))), 1)
+            if feud >= 2:
+                line = line.rstrip(".") + words("annals_feud").format(nth=_ordinal(feud)) + "."
+            out.append(_cap(line))
+        elif not started_today and w["ended"]:              # una sola frase: llevaba N días y terminó
+            win = w.get("winner")
+            out.append(_cap(words("annals_war_old_won" if win else "annals_war_old_draw").format(
+                war=name, d=len(h.get("days", [])) or 2, winner=win)))
+        elif not started_today:
+            out.append(_cap(words("annals_war_goes").format(war=name, d=len(h.get("days", [])) or 2)))
+        if w["battles"] >= 2:
+            out.append(words("annals_war_battles").format(n=w["battles"]))
+        if w["ended"] and started_today:
+            win = w.get("winner")
+            out.append(_cap(words("annals_war_won" if win else "annals_war_draw").format(war=name, winner=win)))
+        told += 1
+    for b_, a_ in today.get("sacked", [])[:2]:
+        out.append(words("annals_war_sack").format(b=b_, a=a_ or "?"))
+    rest = len(wars) - told
+    if rest >= 2:
+        out.append(words("annals_more_wars").format(n=rest))
+    return out
+
+
+def _islands(entries: list[dict], today: dict, names: dict, of: dict, home: str, skip_home: bool) -> list[str]:
+    """Lo que pasó en cada isla (sus reinos caídos, renacidos y fundados; sus edades)."""
+    out = []
+    ages = {isle: n for isle, n in today.get("ages", [])}
+    for isle in [home] + list(names.values()):
+        if isle == home and skip_home:
+            continue
+        falls = [r for r in dict.fromkeys(today.get("falls", [])) if of.get(r, home) == isle][:3]
+        risen = [r for r in dict.fromkeys(today.get("reborn", []) + today.get("founded", []))
+                 if of.get(r, home) == isle][:3]
+        bits = []
+        if isle in ages:
+            bits.append(words("annals_isle_age").format(n=_ordinal(int(ages[isle] or 1))))
+        if falls:
+            bits.append(_plural("annals_isle_falls", falls))
+        if risen:
+            bits.append(_plural("annals_isle_rise", risen))
+        if bits:
+            out.append(words("annals_in_isle").format(isle=isle) + " " + _list([b[:1].lower() + b[1:] if b.split(" ", 1)[0] in words("annals_lower_starts") else b for b in bits]) + ".")
+    return out
+
+
+def _heroes(entries: list[dict], today: dict, hist: dict, day: str) -> list[str]:
+    out = []
+    born = today.get("born", [])
+    if born:
+        items = [words("annals_hero_item").format(hero=h, realm=r) if r else h for h, r, _ in born[:3]]
+        more = len(born) - 3
+        line = _plural("annals_heroes_born", items)
+        if more > 0:
+            line = line.rstrip(".") + words("annals_and_more").format(n=more) + "."
+        out.append(line)
+    deed = next((e["text"] for e in entries if e.get("k") == "hero.deed"), None)
+    if deed:
+        out.append(deed)
+    died = today.get("died", [])
+    if died:
+        items = []
+        for h, r, war in died[:3]:
+            born_day = (hist["heroes"].get(h) or {}).get("born")
+            if war:
+                items.append(words("annals_hero_fell").format(hero=h, war=war))
+            elif born_day and born_day < day:
+                d = (dt.date.fromisoformat(day) - dt.date.fromisoformat(born_day)).days
+                items.append(words("annals_hero_old").format(hero=h, d=d))
+            else:
+                items.append(h)
+        out.append(_plural("annals_heroes_died", items))
+    return out
+
+
+def _marvels(entries: list[dict]) -> list[str]:
+    keys = ("power.dragon", "dragon.leave", "wonder.done", "monument", "power.maravilla", "eruption.start",
+            "pirates", "raid.sail", "isle.rise")
+    picked = sorted((e for e in entries if e.get("k") in keys),
+                    key=lambda e: -PRIORITY.get(e.get("k", ""), 10))[:3]
+    return [e["text"] for e in sorted(picked, key=lambda e: e.get("t", 0))]
 
 
 def _opening(entries: list[dict], world: str, day: str) -> str:
@@ -290,43 +373,33 @@ def _opening(entries: list[dict], world: str, day: str) -> str:
                                        kinds=_list(kinds) if kinds else words("annals_things"))
 
 
-def prose(entries: list[dict], world: dict, day: str, name: str) -> list[str]:
-    """El día como relato: apertura de cronista, un párrafo por momento del día (con lo
-    que lo encadena con el anterior) y un cierre."""
+def prose(entries: list[dict], world: dict, day: str, name: str, today: dict | None = None,
+          hist: dict | None = None) -> list[str]:
+    """El día como relato por hilos: apertura y marco del mundo, la noche de tu isla, las
+    guerras con su historia, lo que pasó en cada isla del lab, los héroes, las maravillas
+    y un cierre. Cada nombre se cuenta una vez."""
+    from . import legend
+    if today is None:
+        today = legend.day_summary(entries)
+    if hist is None:
+        leg = legend.load()
+        leg.setdefault("days", {})[day] = today
+        hist = legend.history(leg, day)
     the_world = world_the(world, name)
+    home, names, of = _isles(world)
     paragraphs = [_opening(entries, the_world, day)]
-    open_wars = [w["name"] for w in (world.get("wars") or {}).values()
-                 if w.get("start", 0) < min((e.get("tick", 0) for e in entries), default=0)]
-    if open_wars:
-        paragraphs[0] += " " + words("annals_open_wars").format(wars=_list(open_wars[:2]))
-    parts = words("story_parts")
-    previous: set[str] = set()
-    acts = []
-    for k, (start, _) in enumerate(parts):
-        end = parts[k + 1][0] if k + 1 < len(parts) else 24
-        mine = [e for e in entries if start <= time.localtime(e["t"]).tm_hour < end]
-        if mine:
-            acts.append((k, mine))
-    for idx, (k, mine) in enumerate(acts):
-        lines, seen = _act(mine, idx == 0, previous)
-        if not lines:
-            continue
-        opener = words("annals_act_open")[k] if idx else ""
-        first = lines[0]
-        if opener:
-            word, _, rest = first.partition(" ")
-            if word.rstrip(",") in words("annals_soft_starts"):          # "Pronto, ..." ya lo dice el conector
-                first = rest if word.endswith(",") else first
-            starts = first.split(" ", 1)[0]
-            if starts in words("annals_lower_starts"):                   # nunca un nombre propio
-                first = first[:1].lower() + first[1:]
-            first = opener + " " + first
-        paragraphs.append(" ".join([first] + lines[1:]))
-        previous |= seen
+    if names:
+        paragraphs[0] += " " + _cap(words("annals_frame").format(world=the_world, home=home,
+                                                                  others=_list(list(names.values()))))
+    night = _home_night(entries, home, of)
+    for block in (night, _wars(entries, today, hist, of, home, day),
+                  _islands(entries, today, names, of, home, skip_home=bool(night)),
+                  _heroes(entries, today, hist, day), _marvels(entries)):
+        if block:
+            paragraphs.append(" ".join(block))
     closes = words("annals_close")
     paragraphs.append(closes[sum(map(ord, day)) % len(closes)].format(world=the_world))
     return [i18n.polish(_cap(p)) for p in paragraphs]
-
 
 def render(ch: dict, markdown: bool = True, bard_text: str | None = None) -> str:
     head = words("annals_chapter").format(n=ch["n"], title=ch["title"])
@@ -407,6 +480,8 @@ def write(day: str, entries: list[dict], cfg: dict | None = None, world: dict | 
         return None
     index = _index()
     n = index.get(day, {}).get("n") or 1 + sum(1 for d in index if d < day)
+    from . import legend
+    legend.record(day, entries)                          # el día entra en la memoria del mundo
     ch = chapter(day, entries, world, n=n)
     prose = bard(ch, cfg or {}) if cfg else None
     if prose:

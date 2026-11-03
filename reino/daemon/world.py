@@ -48,7 +48,7 @@ NO_SHIELD = {"tower", "mine", "lighthouse", "embassy", "wonder"}
 WONDERS = ("coloso", "coliseo", "observatorio", "jardines")
 # nombres propios que se guardan con cada suceso (realm/a/b: reinos; war; place; name; hero; title; isle)
 ANNAL_PARAMS = {"realm", "a", "b", "war", "place", "name", "hero", "title", "isle", "gold", "n", "winner", "dir",
-                "era", "kernel", "old", "the_fort", "the_full", "ruler", "tiles", "job"}
+                "era", "kernel", "old", "the_fort", "the_full", "ruler", "tiles", "job", "hours"}
 ISLE_SIZE = 36                 # lado de la isla de una máquina remota (la tuya mide [world] size)
 
 
@@ -543,6 +543,21 @@ class World:
     def archipelago_name(self) -> str:
         """El mundo entero, cuando hay islas del lab: un nombre propio y estable."""
         return words("archipelago").format(name=self.lore.region("archipelago"))
+
+    def note_sleep(self, now: float):
+        """Al arrancar: si la PC estuvo apagada un buen rato, tu isla 'durmió' (lo cuentan los Anales)."""
+        last = max((e.get("t", 0) for e in self.chronicle.entries[-50:]), default=0)
+        hours = (now - last) / 3600 if last else 0
+        if hours >= 0.5:
+            self._say("mundo", "home.slept", isle=self.kingdom, hours=f"{hours:.0f}" if hours >= 1.5 else "1",
+                      n=round(hours, 1))
+
+    def note_isle_age(self, iid: str, uptime_days: float):
+        """Una máquina del lab se reinició: su isla empieza una edad nueva."""
+        info = self.isles.get(iid)
+        if info:
+            info["ages"] = info.get("ages", 1) + 1            # la isla nació en su primera edad
+            self._say("mundo", "isle.age", info.get("c"), isle=info["name"], n=info["ages"])
 
     def isle_summary(self) -> dict:
         return {iid: {"name": info["name"], "c": info.get("c")} for iid, info in self.isles.items()}
@@ -1711,6 +1726,22 @@ class World:
                              war=key, defender=dfn["id"])
                 self._say("guerra", "exp.siegecity.start", dfn["capital"], a=att["realm"], b=dfn["realm"])
 
+    def _war_name(self, a: dict, b: dict, key: str) -> str:
+        """Un nombre que ninguna otra guerra tuvo antes (si no, los Anales mezclan dos
+        guerras distintas). Se prueban variantes; si todas existen, va con número."""
+        used = self.counters.setdefault("war_names", [])
+        place = self._border_place(a, b)
+        name = self.lore.war_name(a, b, f"{key}:{self.tick}", place=place)
+        for k in range(1, 12):
+            if name not in used:
+                break
+            name = self.lore.war_name(a, b, f"{key}:{self.tick}:{k}", place=place if k % 2 else None)
+        else:
+            name = f"{name} {len(used)}"
+        used.append(name)
+        del used[:-800]
+        return name
+
     def _war_room(self, war: dict, att: dict, dfn: dict) -> int:
         """Lo conquistable en una guerra tiene tope: mueve fronteras, no borra reinos."""
         return max(10, int(0.4 * dfn.get("target", 0))) - war["score"].get(str(att["id"]), 0)
@@ -1750,7 +1781,7 @@ class World:
     def _declare_war(self, a: dict, b: dict):
         key = ":".join(map(str, sorted((a["id"], b["id"]))))
         reason = self.rng.choice(words("war_reasons")).format(place=self.lore.place(f"motivo:{self.tick}"))
-        name = self.lore.war_name(a, b, f"{key}:{self.tick}", place=self._border_place(a, b))
+        name = self._war_name(a, b, key)
         war = self.wars[key] = {"name": name, "a": a["id"], "b": b["id"],
                                 "start": self.tick, "last": self.tick, "score": {}, "front": [],
                                 "until": self.tick + self.rng.randint(300, 900)}   # 10 a 30 minutos
@@ -2018,7 +2049,7 @@ class World:
         self.counters["conquests"] += len(lost)
         war = self.wars.get(key)
         if war is None:
-            name = self.lore.war_name(a, d, f"{key}:{self.tick}", place=self._border_place(a, d))
+            name = self._war_name(a, d, key)
             war = self.wars[key] = {"name": name, "a": a["id"], "b": d["id"], "start": self.tick, "score": {},
                                     "front": []}
             ruler = self.lore.ruler_str(a["ruler"])

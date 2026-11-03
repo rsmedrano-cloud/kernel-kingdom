@@ -92,8 +92,11 @@ tarde, el ocaso) y encadena causas y consecuencias: un reinicio apaga los bastio
 los reinos se disuelven, otros renacen de las cenizas y "con el resurgir de los pueblos
 estalló la ambición", con sus guerras, hasta la paz. Los sucesos se agrupan con sus
 nombres ("Zenhar, Zorravia y Claudel se disolvieron, y sus gentes cargaron las carretas
-hacia el exilio") y el capítulo se titula según lo más grande que pasó. Los capítulos se
-juntan en un libro (`kernel-kingdom annals`).
+hacia el exilio") y el capítulo se titula según lo más grande que pasó. El mundo tiene
+memoria: cada capítulo sabe cuántos días lleva una guerra, que es la tercera entre los
+mismos reinos, que tu isla durmió ocho horas (tu PC duerme, los servidores del lab nunca)
+o que el reinicio de un servidor abrió una edad nueva en su isla. Los capítulos se juntan
+en un libro (`kernel-kingdom annals`).
 
 **El cronista** (opcional): un modelo de lenguaje toma ese borrador ordenado y lo escribe
 en prosa épica: [ollama](https://ollama.com), o cualquier servidor compatible con la API de

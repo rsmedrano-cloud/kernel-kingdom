@@ -160,11 +160,15 @@ def _encoder() -> tuple[list[str], str]:
     raise VideoError("ffmpeg no tiene un encoder de video que sirva (x264, VP9 o AV1)")
 
 
-def _finish(raw: Path, out: Path, piper_rate: int | None = None) -> float:
-    """A mono 44.1 kHz, con un toque de narrador (con Piper, además, un poco más grave)."""
-    af = "aresample=44100,bass=g=2:f=110,aecho=0.8:0.5:40:0.06"
-    if piper_rate:
-        af = f"asetrate={piper_rate}*0.93,aresample=44100,atempo=1.04,bass=g=4:f=110,aecho=0.8:0.6:45|90:0.15|0.06"
+def _finish(raw: Path, out: Path, depth: float = 0.9) -> float:
+    """A mono 44.1 kHz con voz de narrador: más grave (`depth` < 1 baja el tono sin cambiar
+    la velocidad), con más cuerpo en los graves y un poco de sala."""
+    with wave.open(str(raw)) as w:
+        rate = w.getframerate()
+    depth = min(1.0, max(0.75, depth))
+    af = (f"asetrate={rate}*{depth},aresample=44100,atempo={1 / depth:.4f},"
+          "bass=g=6:f=95:w=0.8,equalizer=f=3200:t=q:w=1.2:g=-2,"
+          "aecho=0.8:0.55:55|110:0.14|0.06,alimiter=limit=0.95")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-af", af, "-ac", "1", "-ar", "44100",
                     str(out)], check=True)
     raw.unlink(missing_ok=True)
@@ -175,6 +179,7 @@ def _finish(raw: Path, out: Path, piper_rate: int | None = None) -> float:
 def synthesize(texts: list[str], tmp: Path, cfg: dict, progress=print) -> list[tuple[Path, float]]:
     """Cada texto a un WAV (mono 44.1 kHz). Devuelve [(wav, duración)]."""
     out = []
+    depth = float(cfg.get("video", {}).get("depth", 0.88))
     if engine(cfg) == "kokoro":
         py, model, voices = ensure_kokoro(cfg)
         voice = voice_name(cfg)
@@ -189,11 +194,10 @@ def synthesize(texts: list[str], tmp: Path, cfg: dict, progress=print) -> list[t
             raise VideoError("Kokoro no pudo sintetizar: " + (r.stderr.strip().splitlines() or ["?"])[-1])
         for k in range(len(texts)):
             wav = tmp / f"{k:02d}.wav"
-            out.append((wav, _finish(tmp / f"{k:02d}.raw.wav", wav)))
+            out.append((wav, _finish(tmp / f"{k:02d}.raw.wav", wav, depth)))
         return out
     exe = ensure_piper()
     model = ensure_voice(voice_name(cfg))
-    rate = json.loads(model.with_suffix(".onnx.json").read_text())["audio"]["sample_rate"]
     for k, text in enumerate(texts):
         progress(i18n.ui("video.speaking", n=k + 1, total=len(texts)))
         raw = tmp / f"{k:02d}.raw.wav"
@@ -202,7 +206,7 @@ def synthesize(texts: list[str], tmp: Path, cfg: dict, progress=print) -> list[t
         if r.returncode or not raw.exists():
             raise VideoError("Piper no pudo sintetizar la voz")
         wav = tmp / f"{k:02d}.wav"
-        out.append((wav, _finish(raw, wav, rate)))
+        out.append((wav, _finish(raw, wav, depth)))
     return out
 
 
