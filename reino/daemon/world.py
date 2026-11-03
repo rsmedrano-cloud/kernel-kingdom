@@ -46,6 +46,8 @@ POWERS = ("rayo", "lluvia", "bendicion", "heroe", "bosque", "faro", "fiesta", "d
           "maravilla", "dragon", "murallas", "tregua")
 NO_SHIELD = {"tower", "mine", "lighthouse", "embassy", "wonder"}
 WONDERS = ("coloso", "coliseo", "observatorio", "jardines")
+# nombres propios que se guardan con cada suceso (realm/a/b: reinos; war; place; name; hero; title; isle)
+ANNAL_PARAMS = {"realm", "a", "b", "war", "place", "name", "hero", "title", "isle", "gold", "n", "winner", "dir"}
 ISLE_SIZE = 36                 # lado de la isla de una máquina remota (la tuya mide [world] size)
 
 
@@ -272,8 +274,11 @@ class World:
                                         "alive": True, "walls": 0, "activity": 0.0}
 
     def _say(self, kind: str, key: str, where=None, ckey: str | None = None, cooldown: int = 0, **kw):
-        """Agrega a la crónica la plantilla `key` (con una variante al azar) en el idioma activo."""
-        self.chronicle.add(self.tick, kind, self.chronicle.tr(key, **kw), where, ckey, cooldown, tkey=key)
+        """Agrega a la crónica la plantilla `key` (con una variante al azar) en el idioma activo.
+        Los nombres propios quedan aparte en la entrada, para que los Anales puedan usarlos."""
+        params = {k: v for k, v in kw.items() if k in ANNAL_PARAMS and isinstance(v, (str, int, float))}
+        self.chronicle.add(self.tick, kind, self.chronicle.tr(key, **kw), where, ckey, cooldown, tkey=key,
+                           params=params)
 
     def _realm_kw(self, f: dict) -> dict:
         ruler = self.lore.ruler_str(f["ruler"])

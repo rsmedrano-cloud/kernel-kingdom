@@ -24,6 +24,7 @@ from .lore import Lore
 
 
 valid_target = remote.valid_target
+GRACE = 90                               # segundos que un reino remoto aguanta sin aparecer en el reporte
 
 
 def island_id(target: str) -> str:
@@ -139,6 +140,7 @@ class Archipelago:
         self.lock = threading.Lock()
         self.fleet = remote.Fleet(self._remote_cfg(cfg))
         self.stop = threading.Event()
+        self._recent: dict[str, dict] = {}                 # por isla: lo visto hace poco (tolerancia)
         self._cleanup_old()
         self.thread = threading.Thread(target=self._poll_loop, daemon=True)
         self.thread.start()
@@ -204,12 +206,24 @@ class Archipelago:
             words = host_words(t, isl.snap.get("host"))
             self._scrub_world(world, iid, words)
             r = to_snap(isl.snap, interval)
+            now = time.time()
+            recent = self._recent.setdefault(iid, {})
             for table in ("browsers", "apps", "fortresses"):
                 for key, g in r[table].items():
                     kind, _, name = key.rpartition(":")
                     clean = clean_name(name, words)        # nada del hostname ni del usuario en el mapa
                     key = f"{kind}:{clean}" if kind else clean
-                    out[table][f"{iid}/{key}"] = dict(g, name=clean) if "name" in g else g
+                    g = dict(g, name=clean) if "name" in g else g
+                    out[table][f"{iid}/{key}"] = g
+                    recent[(table, key)] = (g, now)
+            # Tolerancia: lo que dejó de aparecer hace poco (bajó un momento del mínimo, salió
+            # del top del reporte) sigue en pie; si no, sus reinos caen y renacen sin parar.
+            for (table, key), (g, seen) in list(recent.items()):
+                full = f"{iid}/{key}"
+                if now - seen > GRACE:
+                    del recent[(table, key)]
+                elif not any(full in out[t] for t in ("browsers", "apps", "fortresses")):
+                    out[table][full] = g
             out["isles"][iid] = {"online": True, "cpu": r["cpu"], "net": round(r["net_rx"] + r["net_tx"], 2)}
         return out
 

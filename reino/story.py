@@ -131,41 +131,17 @@ def scrub(text: str) -> str:
     return text
 
 
-def build(day: str, entries: list[dict], kingdom: str, era: str = "", markdown: bool = True) -> str:
-    date = dt.date.fromisoformat(day).strftime("%d/%m/%Y")
+def build(day: str, entries: list[dict], kingdom: str = "", era: str = "", markdown: bool = True) -> str:
+    """El relato del día: el capítulo de los Anales (título, en el capítulo anterior,
+    secciones por tema, epílogo)."""
+    from . import annals
     if not entries:
-        return tr("story.empty", date=date)
-    parts = count_parts(entries)
-    title = tr("story.title", kingdom=kingdom, date=date)
-    out = [f"# {title}" if markdown else title, ""]
-    if era:
-        out += [tr("story.era", era=era), ""]
-    out += [tr("story.summary", events=len(entries), parts=", ".join(parts) if parts else tr("story.none")), ""]
-
-    big = [e["text"] for e in entries if e.get("k") in _HIGHLIGHTS][:14]
-    if big:
-        out += [f"## {tr('story.highlights')}" if markdown else tr("story.highlights").upper(), ""]
-        out += [f"- {t}" if markdown else t for t in big] + [""]
-
-    sections = words("story_parts")
-    for k, (start, name) in enumerate(sections):
-        end = sections[k + 1][0] if k + 1 < len(sections) else 24
-        texts = [e["text"] for e in entries if start <= time.localtime(e["t"]).tm_hour < end]
-        if not texts:
-            continue
-        out += [f"## {name}" if markdown else name.upper(), ""]
-        for j in range(0, len(texts), 5):                 # párrafos de cinco sucesos
-            out += [" ".join(texts[j:j + 5]), ""]
-
-    heroes = [e["text"] for e in entries if e.get("k") in ("hero.born", "power.heroe", "hero.deed", "hero.died", "hero.fell")]
-    if heroes:
-        out += [f"## {tr('story.heroes')}" if markdown else tr("story.heroes").upper(), ""]
-        out += [f"- {t}" if markdown else t for t in heroes] + [""]
-    out.append(tr("story.end", kingdom=kingdom))
-    return "\n".join(out) + "\n"
+        return tr("story.empty", date=dt.date.fromisoformat(day).strftime("%d/%m/%Y"))
+    return annals.render(annals.chapter(day, entries), markdown)
 
 
-def export(day: str | None = None, kingdom: str | None = None, era: str = "") -> tuple[Path, Path] | None:
+def export(day: str | None = None, kingdom: str | None = None, era: str = "",
+           world: dict | None = None) -> tuple[Path, Path] | None:
     """Escribe stories/AAAA-MM-DD.md y .txt. Devuelve las rutas (o None si no hubo crónica)."""
     day = day or time.strftime("%Y-%m-%d")
     entries = load(day)
@@ -177,9 +153,16 @@ def export(day: str | None = None, kingdom: str | None = None, era: str = "") ->
             kingdom = saved.get("kingdom", "")
         except (OSError, ValueError):
             kingdom = ""
+    from . import annals, config
+    try:
+        cfg = config.load()
+    except (OSError, ValueError):
+        cfg = {}
+    annals.write(day, entries, cfg, world)                # capítulo de los Anales (+ libro)
     folder = paths.data_dir() / "stories"
     folder.mkdir(parents=True, exist_ok=True)
     md, txt = folder / f"{day}.md", folder / f"{day}.txt"
-    md.write_text(build(day, entries, kingdom, era, markdown=True), encoding="utf-8")
-    txt.write_text(build(day, entries, kingdom, era, markdown=False), encoding="utf-8")
+    src = annals.folder()
+    md.write_text((src / f"{day}.md").read_text(encoding="utf-8"), encoding="utf-8")
+    txt.write_text((src / f"{day}.txt").read_text(encoding="utf-8"), encoding="utf-8")
     return md, txt

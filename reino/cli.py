@@ -12,6 +12,8 @@
     kernel-kingdom story           # la historia del día como relato (.md y .txt)
     kernel-kingdom update          # baja la última versión y reinicia lo que esté corriendo
     kernel-kingdom timelapse       # GIF de cómo cambiaron las fronteras hoy
+    kernel-kingdom video           # el capítulo del día narrado sobre el mapa (voz Piper)
+    kernel-kingdom annals          # el libro de los Anales (un capítulo por día)
     kernel-kingdom snapshot out.png
 """
 import argparse
@@ -192,6 +194,23 @@ def cmd_update(args):
         print(ui("cli.update.failed", detail=detail))
         return 1
     print(ui("cli.update.done", version=version, restarted=len(restarted)))
+    return 0
+
+
+def cmd_video(args):
+    from . import video
+    cfg = config.load()
+    missing = video.missing_downloads(cfg)
+    if missing and not args.yes:
+        answer = input(ui("video.download", what=", ".join(missing)) + " [s/N] ").strip().lower()
+        if answer not in ("s", "si", "sí", "y", "yes"):
+            return 1
+    try:
+        out = video.make(args.date, cfg=cfg)
+    except (video.VideoError, OSError) as e:
+        print(ui("video.failed", detail=e))
+        return 1
+    print(ui("video.done", path=out))
     return 0
 
 
@@ -460,6 +479,10 @@ def main():
     inst.add_argument("--no-wallpaper", action="store_true", help="solo el mundo y el lanzador, sin fondo de pantalla")
     wp = sub.add_parser("wallpaper", help="prender/apagar el fondo de pantalla (on, off, status)")
     wp.add_argument("state", choices=["on", "off", "status"])
+    vd = sub.add_parser("video", help="el capítulo del día narrado sobre el mapa")
+    vd.add_argument("--date", help="AAAA-MM-DD (por defecto, hoy)")
+    vd.add_argument("--yes", action="store_true", help="no preguntar antes de bajar la voz (una sola vez)")
+    sub.add_parser("annals", help="el libro de los Anales: escribe el capítulo de hoy y muestra la ruta")
     tl = sub.add_parser("timelapse", help="GIF de cómo cambiaron las fronteras en el día")
     tl.add_argument("--date", help="AAAA-MM-DD (por defecto, hoy)")
     up = sub.add_parser("update", help="baja la última versión y reinicia lo que esté corriendo")
@@ -490,6 +513,13 @@ def main():
         os.execv(sys.executable, [sys.executable, "-m", "reino.render", "--snapshot", args.png, *args.extra])
     if args.cmd == "story":
         return cmd_story(args)
+    if args.cmd == "video":
+        return cmd_video(args)
+    if args.cmd == "annals":
+        from . import annals, story
+        story.export(None)                            # capítulo de hoy al día
+        print(annals.book(annals.world_name(annals._world())))
+        return 0
     if args.cmd == "timelapse":
         from . import timelapse
         out = timelapse.export(args.date)

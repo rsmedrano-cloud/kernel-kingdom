@@ -83,6 +83,23 @@ Every day's borders, as a GIF (Menu > World > Timelapse):
 
 ![timelapse of a day: realms grow, clash and move](docs/img/timelapse.gif)
 
+## The Annals and the video of the day
+
+Every day becomes a **chapter of the Annals**: titled after its biggest event ("The
+Sack of Zenhar", "The Coming of the Dragon Gwenia"), opening with what was left
+unresolved the day before, then wars, crowns, works, heroes, the Sovereign's will
+and the world, with the important first and the repetitive summed up ("There were
+also 85 wars, 91 battles…"), and an epilogue with the mightiest realms. Chapters
+pile up into a book (`kernel-kingdom annals`). Optionally a local model through
+[ollama](https://ollama.com) rewrites each chapter as prose (`[bard]` in the config;
+the day's facts only go to the address you set, by default this same PC).
+
+**The video of the day** (Menu > World, or `kernel-kingdom video`): the chapter read
+by a narrator ([Piper](https://github.com/rhasspy/piper), a free voice that runs on
+your CPU) while the camera flies to where each thing happened, with subtitles. Piper
+and the voice are downloaded once (~90 MB, it asks first); after that everything is
+local. A one-minute video takes seconds to make. Voices: `[video]` in the config.
+
 ## The story of the day
 
 Every chronicle entry is archived per day. At midnight (or whenever you press

@@ -84,6 +84,23 @@ Las fronteras de cada día, en un GIF (Menú > Mundo > Timelapse):
 
 ![timelapse de un día: los reinos crecen, chocan y se mudan](docs/img/timelapse.gif)
 
+## Los Anales y el video del día
+
+Cada día se vuelve un **capítulo de los Anales**: con título según lo más grande
+que pasó ("El Saqueo de Zenhar", "La Llegada del Dragón Gwenia"), un "en el capítulo
+anterior" con lo que quedó abierto, después guerras, coronas, obras, héroes, los
+designios del Soberano y el mundo, con lo importante primero y lo repetido resumido
+("Además hubo 85 guerras, 91 batallas…"), y un epílogo con los reinos más poderosos.
+Los capítulos se juntan en un libro (`kernel-kingdom annals`). Opcional: un modelo
+local vía [ollama](https://ollama.com) reescribe cada capítulo en prosa (`[bard]` en la
+config; los hechos del día solo van a la dirección que pongas, por defecto esta PC).
+
+**El video del día** (Menú > Mundo, o `kernel-kingdom video`): el capítulo leído por
+un narrador ([Piper](https://github.com/rhasspy/piper), una voz libre que corre en tu
+CPU) mientras la cámara va a donde pasó cada cosa, con subtítulos. Piper y la voz se
+bajan una sola vez (~90 MB, pregunta antes); después todo es local. Un video de un
+minuto se arma en segundos. Voces: `[video]` en la config.
+
 ## La historia del día
 
 Cada entrada de la crónica se archiva por día. A medianoche (o cuando apretás `e`

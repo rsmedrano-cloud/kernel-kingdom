@@ -414,16 +414,21 @@ class WorldTest(unittest.TestCase):
         from reino import story
         with tempfile.TemporaryDirectory() as tmp:
             os.environ["XDG_DATA_HOME"] = tmp
+            os.environ["XDG_STATE_HOME"] = tmp                # nunca leer el mundo real de quien corre los tests
             try:
                 self.run_ticks(40, snap(browsers={"chrome": proc(2000)}, boot=1))
                 story.archive(self.world.chronicle.take_fresh())
-                md, txt = story.export(None, self.world.kingdom, "Era del Alba")
+                md, txt = story.export(None, self.world.kingdom, "Era del Alba", self.world.to_dict())
                 text = md.read_text()
-                self.assertIn(f"# Crónica de {self.world.kingdom}", text)
+                self.assertIn("## Capítulo 1:", text)
+                self.assertIn(self.world.kingdom, text)
                 self.assertIn("Cromaria", text)
                 self.assertNotIn("#", txt.read_text())    # el .txt es texto plano, para leer en voz alta
+                from reino import annals
+                self.assertTrue((annals.folder() / "annals.md").exists())
             finally:
                 del os.environ["XDG_DATA_HOME"]
+                del os.environ["XDG_STATE_HOME"]
 
     def test_english_chronicle(self):
         i18n.set_lang("en")

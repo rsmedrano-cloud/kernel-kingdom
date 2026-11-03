@@ -148,6 +148,21 @@ class ArchipelagoTest(unittest.TestCase):
         for _ in range(5):
             w.step(arch.merge(copy.deepcopy(self.local), w, 2.0))
 
+    def test_a_process_that_blinks_does_not_topple_its_realm(self):
+        w = World(self.cfg)
+        arch = self.arch_with_report(w)
+        for _ in range(30):
+            w.step(arch.merge(copy.deepcopy(self.local), w, 2.0))
+        iid = A.island_id("kk@secreto-lab")
+        isl = arch.fleet.islands["kk@secreto-lab"]
+        rep = copy.deepcopy(isl.prev)
+        rep["groups"] = [g for g in rep["groups"] if g["name"] != "ollama"]   # desaparece en un reporte
+        isl.update(rep)
+        for _ in range(5):
+            w.step(arch.merge(copy.deepcopy(self.local), w, 2.0))
+        self.assertTrue(w.factions[f"{iid}/ollama"]["alive"])
+        self.assertFalse(any(e.get("k") == "fall" and "llama" in e["text"].lower() for e in w.chronicle.entries))
+
     def test_war_between_islands_sails_across_the_sea(self):
         w = World(self.cfg)
         arch = self.arch_with_report(w)
