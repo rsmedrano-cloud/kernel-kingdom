@@ -185,12 +185,13 @@ def cmd_update(args):
     if not new and not args.force:
         print(ui("cli.update.none") if update.latest() else ui("cli.update.offline"))
         return 0
-    print(ui("cli.update.installing", version=new or "main"))
+    version = new or update.latest() or __version__        # con --force: el último release publicado
+    print(ui("cli.update.installing", version=version))
     ok, detail, restarted = apply_update()
     if not ok:
         print(ui("cli.update.failed", detail=detail))
         return 1
-    print(ui("cli.update.done", version=new or "main", restarted=len(restarted)))
+    print(ui("cli.update.done", version=version, restarted=len(restarted)))
     return 0
 
 
