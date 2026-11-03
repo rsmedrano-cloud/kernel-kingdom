@@ -1027,9 +1027,17 @@ class World:
         self.cpu_ema = 0.6 * self.cpu_ema + 0.4 * snap["cpu"]
         ema = self.cpu_ema
 
-        storm = self.weather["storm"]
-        threshold = wc["storm_cpu"] - (10 if storm else 0)  # histéresis
-        storm = max(0.2, min(1.0, (ema - wc["storm_cpu"] + 10) / (110 - wc["storm_cpu"]))) if ema >= threshold else 0.0
+        prev = self.weather["storm"]
+        threshold = wc["storm_cpu"] - (10 if prev else 0)   # histéresis
+        target = max(0.2, min(1.0, (ema - wc["storm_cpu"] + 10) / (110 - wc["storm_cpu"]))) if ema >= threshold else 0.0
+        # Inercia: la tormenta crece rápido, pero cuando se va la causa se calma de a poco
+        # (~1 min desde lo más fuerte) en vez de cortarse de golpe.
+        if target >= prev:
+            storm = min(target, prev + 0.15)
+        else:
+            storm = max(target, prev - 0.015)
+            if storm < 0.05 and not target:
+                storm = 0.0
 
         if ema >= wc["eruption_cpu"]:
             self.hot_time += dt
@@ -1050,7 +1058,8 @@ class World:
             "fog": snap["ram"] >= wc["fog_ram"],
             "heat": bool(temp and temp >= wc["heat_temp"]),
             "plague": snap.get("swap", 0) >= wc["plague_swap"],
-            "rain": self.tick < self.rain_until,
+            # lluvia del Soberano: 0..1, se va desvaneciendo en los últimos ticks
+            "rain": round(min(1.0, max(0, self.rain_until - self.tick) / 12), 2),
             "culprit": culprit if (storm or eruption) else None,
             "cpu_ema": round(ema, 1),
         }

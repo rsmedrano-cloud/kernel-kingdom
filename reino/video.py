@@ -5,8 +5,8 @@ La voz es local y corre en la CPU, sin internet después de la primera descarga
 - Kokoro (por defecto): voces naturales; se instala en su propio entorno de Python
   (kokoro-venv) para no mezclar onnxruntime con la app.
 - Piper: más liviano y más robótico.
-El texto es el relato del día (o la prosa del cronista, si hay). Cada frase se
-sintetiza; la cámara va al reino, la isla o la región que nombra la frase y se queda
+El texto es la prosa del cronista (IA) si está configurado; si no, los resúmenes del
+día. Cada frase se sintetiza; la cámara va al reino, la isla o la región que nombra la frase y se queda
 ahí mientras dura; los subtítulos se dibujan en cada cuadro; ffmpeg junta todo.
 """
 import json
@@ -214,7 +214,13 @@ def narration(day: str, entries: list[dict], state: dict, cfg: dict) -> tuple[di
     """El capítulo y lo que se dice: el título, y después el relato frase por frase (la
     prosa del cronista si la hay), cada frase con el lugar que nombra (reino, isla o región)."""
     ch = annals.chapter(day, entries)
-    text = annals.bard_text(day) or annals.bard(ch, cfg) or "\n\n".join(ch["prose"])
+    text = annals.bard_text(day) or annals.bard(ch, cfg)
+    if not text:                                          # sin cronista (IA): los resúmenes del día
+        lines = list(ch["previously"])
+        for sec in ch["sections"]:
+            lines += sec["texts"][:3]
+        lines += ch["epilogue"][-2:]
+        text = " ".join(lines)
     places = {}
     for r in state.get("regions") or []:
         if r.get("name"):

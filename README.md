@@ -83,33 +83,32 @@ Every day's borders, as a GIF (Menu > World > Timelapse):
 
 ![timelapse of a day: realms grow, clash and move](docs/img/timelapse.gif)
 
-## The Annals and the video of the day
+## The Annals
 
-Every day becomes a **chapter of the Annals**, told the way a chronicler would: it
-opens with "Hear the chronicle of…", follows the day in acts (before dawn, the
-morning, the afternoon, the dusk) and links causes and consequences: a reboot
-silences the strongholds, realms dissolve, others are reborn from the ashes, and
-"with the peoples' revival came ambition" and its wars, until peace. Events are
-grouped with their names ("Zenhar, Zorravia and Claudel dissolved, and their people
-loaded their carts into exile"), and the chapter is titled after the biggest thing
-that happened. The world remembers: each chapter knows how many days a war has
-lasted, that it is the third between the same two realms, that your island slept
-eight hours last night (your PC sleeps, the lab's servers never do) or that a
-server's reboot opened a new age on its island. Chapters pile up into a book
-(`kernel-kingdom annals`).
+Every day becomes a **chapter of the Annals**: titled after its biggest event ("The
+Sack of Zenhar", "The Coming of the Dragon Gwenia"), opening with what was left
+unresolved the day before, then wars, crowns, works, heroes, the Sovereign's will and
+the world, with the important first and the repetitive counted ("There were also 85
+wars, 91 battles…"), and an epilogue with the mightiest realms. The world remembers:
+wars across days, rivalries between realms, heroes' lives, your island's nights (your
+PC sleeps, the lab's servers never do) and the ages of each island. Chapters pile up
+into a book (`kernel-kingdom annals`).
 
-**The chronicler** (optional): a language model takes that ordered draft and writes
-it as epic prose: [ollama](https://ollama.com), or any OpenAI-compatible server
-(llama.cpp, LM Studio, vLLM, or a hosted service). `[bard]` in the config; the day's
-facts only go to the address you set, and an API key is read from an environment
-variable, never from the config.
+### Studio (experimental)
 
-**The video of the day** (Menu > World, or `kernel-kingdom video`): the chapter read
-by a local voice while the camera flies to the realm, island or region each sentence
-names, with subtitles. The default voice is [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
-(natural, runs on your CPU, installed in its own environment); [Piper](https://github.com/rhasspy/piper)
-is a lighter option. Everything is downloaded once (it asks first) and then works
-offline. Voices and engine: `[video]` in the config.
+For those who want to go further: **the video of the day** (Menu > Studio, or
+`kernel-kingdom video`) reads the chapter with a local voice while the camera flies to
+the realm, island or region each sentence names, with subtitles.
+[Kokoro](https://github.com/thewh1teagle/kokoro-onnx) voices by default (natural, CPU,
+installed in their own environment), [Piper](https://github.com/rhasspy/piper) as a
+lighter option; downloaded once (it asks first), then offline. Voice, depth and speed:
+`[video]` in the config.
+
+**The chronicler** turns the day into real prose: a language model gets the day already
+ordered into threads (with the world's memory) and a style guide, and writes it as an
+epic tale. [ollama](https://ollama.com) or any OpenAI-compatible server (llama.cpp, LM
+Studio, vLLM, or a hosted one): `[bard]` in the config. The facts only go to the
+address you set; an API key is read from an environment variable.
 
 ## The story of the day
 
