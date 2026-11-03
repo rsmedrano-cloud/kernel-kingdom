@@ -84,32 +84,32 @@ Las fronteras de cada día, en un GIF (Menú > Mundo > Timelapse):
 
 ![timelapse de un día: los reinos crecen, chocan y se mudan](docs/img/timelapse.gif)
 
-## Los Anales y el video del día
+## Los Anales
 
-Cada día se vuelve un **capítulo de los Anales**, contado como lo haría un cronista:
-abre con "Escuchad la crónica de…", sigue el día en actos (la madrugada, la mañana, la
-tarde, el ocaso) y encadena causas y consecuencias: un reinicio apaga los bastiones,
-los reinos se disuelven, otros renacen de las cenizas y "con el resurgir de los pueblos
-estalló la ambición", con sus guerras, hasta la paz. Los sucesos se agrupan con sus
-nombres ("Zenhar, Zorravia y Claudel se disolvieron, y sus gentes cargaron las carretas
-hacia el exilio") y el capítulo se titula según lo más grande que pasó. El mundo tiene
-memoria: cada capítulo sabe cuántos días lleva una guerra, que es la tercera entre los
-mismos reinos, que tu isla durmió ocho horas (tu PC duerme, los servidores del lab nunca)
-o que el reinicio de un servidor abrió una edad nueva en su isla. Los capítulos se juntan
-en un libro (`kernel-kingdom annals`).
+Cada día se vuelve un **capítulo de los Anales**: con título según lo más grande que
+pasó ("El Saqueo de Zenhar", "La Llegada del Dragón Gwenia"), un "en el capítulo
+anterior" con lo que quedó abierto, después guerras, coronas, obras, héroes, los
+designios del Soberano y el mundo, con lo importante primero y lo repetido resumido
+("Además hubo 85 guerras, 91 batallas…"), y un epílogo con los reinos más poderosos. El
+mundo tiene memoria: las guerras que duran días, las rivalidades entre reinos, la vida
+de los héroes, las noches de tu isla (tu PC duerme, los servidores del lab nunca) y las
+edades de cada isla. Los capítulos se juntan en un libro (`kernel-kingdom annals`).
 
-**El cronista** (opcional): un modelo de lenguaje toma ese borrador ordenado y lo escribe
-en prosa épica: [ollama](https://ollama.com), o cualquier servidor compatible con la API de
-OpenAI (llama.cpp, LM Studio, vLLM, o un servicio). `[bard]` en la config; los hechos del
-día solo van a la dirección que pongas, y la clave se lee de una variable de entorno, nunca
-de la config.
+### Estudio (experimental)
 
-**El video del día** (Menú > Mundo, o `kernel-kingdom video`): el capítulo leído por una voz
-local mientras la cámara va al reino, la isla o la región que nombra cada frase, con
-subtítulos. La voz por defecto es [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
-(natural, corre en tu CPU, se instala en su propio entorno); [Piper](https://github.com/rhasspy/piper)
-es la opción liviana. Todo se baja una sola vez (pregunta antes) y después funciona sin
-internet. Voces y motor: `[video]` en la config.
+Para quien quiera ir más allá: **el video del día** (Menú > Estudio, o
+`kernel-kingdom video`) lee el capítulo con una voz local mientras la cámara va al reino,
+la isla o la región que nombra cada frase, con subtítulos. Voces de
+[Kokoro](https://github.com/thewh1teagle/kokoro-onnx) por defecto (naturales, en la CPU,
+en su propio entorno) y [Piper](https://github.com/rhasspy/piper) como opción liviana; se
+bajan una sola vez (pregunta antes) y después funcionan sin internet. Voz, gravedad y
+velocidad: `[video]` en la config.
+
+**El cronista** convierte el día en prosa de verdad: un modelo de lenguaje recibe el día
+ya ordenado en hilos (con la memoria del mundo) y una guía de estilo, y lo escribe como
+un relato épico. [ollama](https://ollama.com) o cualquier servidor compatible con la API
+de OpenAI (llama.cpp, LM Studio, vLLM, o un servicio): `[bard]` en la config. Los hechos
+solo van a la dirección que pongas; la clave se lee de una variable de entorno.
 
 ## La historia del día
 

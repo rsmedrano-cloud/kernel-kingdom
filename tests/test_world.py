@@ -149,7 +149,10 @@ class WorldTest(unittest.TestCase):
         self.assertTrue(self.world.weather["eruption"])
         self.assertTrue(any(e["type"] == "lightning" for e in events))
         self.assertGreater(sum(1 for v in self.world.lava if v), 0)
-        self.run_ticks(20, snap(cpu=3.0))
+        peak = self.world.weather["storm"]
+        self.run_ticks(5, snap(cpu=3.0))                        # se fue la causa: amaina, no se corta
+        self.assertTrue(0 < self.world.weather["storm"] < peak)
+        self.run_ticks(70, snap(cpu=3.0))
         self.assertEqual(self.world.weather["storm"], 0.0)
         self.assertFalse(self.world.weather["eruption"])
         self.assertEqual(self.kinds().count("storm"), 2)

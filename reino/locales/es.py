@@ -558,6 +558,7 @@ UI = {
     "menu.video": "Video del día (narrado)",
     "dialog.video.yes": "Sí, bajar y armar el video",
     "dialog.video.no": "Ahora no",
+    "menu.studio": "Estudio (experimental)",
     "menu.wallpaper": "Fondo de pantalla",
     "toast.wallpaper_on": "Fondo de pantalla activado ({monitors}). Arranca solo con la sesión.",
     "toast.wallpaper_off": "Fondo de pantalla desactivado. El mundo sigue corriendo.",

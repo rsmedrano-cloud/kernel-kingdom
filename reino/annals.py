@@ -405,14 +405,15 @@ def render(ch: dict, markdown: bool = True, bard_text: str | None = None) -> str
     head = words("annals_chapter").format(n=ch["n"], title=ch["title"])
     out = [f"## {head}" if markdown else head.upper(), "", f"*{ch['world']} — {ch['date']}*" if markdown
            else f"{ch['world']} — {ch['date']}", ""]
-    body = [p.strip() for p in bard_text.strip().split("\n") if p.strip()] if bard_text else ch["prose"]
-    for para in body:
-        out += [para, ""]
+    if ch["previously"]:
+        out += [" ".join(ch["previously"]), ""]
+    if bard_text:                                        # la prosa del cronista (IA), si la hay
+        out += [p.strip() for p in bard_text.strip().split("\n") if p.strip()]
+        out += ["", f"### {words('annals_details')}" if markdown else words("annals_details").upper(), ""]
+    for s in ch["sections"]:                             # los resúmenes por tema, con todo su detalle
+        out += [f"### {s['heading']}" if markdown else s["heading"].upper(), ""]
+        out += [" ".join(s["texts"]), ""]
     out += [" ".join(ch["epilogue"]), ""]
-    if markdown:                                         # en el libro, también el detalle por tema
-        out += [f"### {words('annals_details')}", ""]
-        for s in ch["sections"]:
-            out += [f"**{s['heading']}.** " + " ".join(s["texts"]), ""]
     return "\n".join(out)
 
 

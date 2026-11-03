@@ -936,7 +936,8 @@ class Sprites:
         pixels(ctx, [(9, 0)], GOLD, size=(1, 1))
         if flip:
             s2, c2 = _surface(18, 15)
-            c2.translate(18, 0)
+            c2.identity_matrix()                          # espejar en pixels reales (con zoom el sprite mide 18*u)
+            c2.translate(s.get_width(), 0)
             c2.scale(-1, 1)
             c2.set_source_surface(s, 0, 0)
             c2.paint()
@@ -956,7 +957,8 @@ class Sprites:
         pixels(ctx, [(8, 0)], rgb("#c0392b"), size=(2, 1))                                 # gallardete
         if flip:
             s2, c2 = _surface(16, 15)
-            c2.translate(16, 0)
+            c2.identity_matrix()                          # espejar en pixels reales (con zoom el sprite mide 16*u)
+            c2.translate(s.get_width(), 0)
             c2.scale(-1, 1)
             c2.set_source_surface(s, 0, 0)
             c2.paint()
@@ -2046,6 +2048,8 @@ class Painter:
                 price = ", ".join(f"{v} {res[c]}" for c, v in cost.items())
                 col = GOLD if key == self.selected_power else (TEXT if afford else (0.42, 0.43, 0.46))
                 add(f"  {k + 1 if k < 9 else ' '} {names[key][0]:<10} {price}", col, ("power", key))
+        add(ui("menu.studio"), GOLD, None)
+        add(f"  {ui('menu.video')}", TEXT, ("video",))
         add(ui("menu.world"), GOLD, None)
         if self.update_available:
             add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
@@ -2055,7 +2059,6 @@ class Painter:
         add(f"  [{'x' if self.wallpaper_on else ' '}] {ui('menu.wallpaper')}", TEXT, ("wallpaper",))
         add(f"  {ui('menu.share')}", TEXT, ("share",))
         add(f"  {ui('menu.timelapse')}", TEXT, ("timelapse",))
-        add(f"  {ui('menu.video')}", TEXT, ("video",))
         add(f"  {ui('menu.language')}", TEXT, ("language",))
         add(f"  {ui('menu.machines')}", TEXT, ("machines",))
         add(f"  {ui('menu.story')}", TEXT, ("story",))
@@ -3012,11 +3015,11 @@ class Painter:
                     x, y = ax + (bx - ax) * fr, ay + (by - ay) * fr
                     z = zs[min(j + 1, L)] if fr >= 0.5 else zs[j]
                     y += int(now * 4 + k) % 2 * 0.5           # paso
+                if not self._visible(x, y - 2, z):
+                    continue                                  # tapado por un edificio: ni él ni su estandarte
                 if k == 0 and e["kind"] != "plant":
                     mark("pole", (x, y - 9))
                     mark("flag:" + ",".join(f"{c:.3f}" for c in col), (x + 1, y - 9))
-                if not self._visible(x, y - 2, z):
-                    continue
                 heads.append((x, y - 2))
                 bodies.setdefault(col, []).append((x, y - 1))
                 if e["kind"] in ("army", "siege"):
@@ -3526,8 +3529,9 @@ class Painter:
         for k in range(3 + (4 if w["storm"] else 0) + (3 if w["fog"] else 0)):
             x = (k * 211 + now * (3 + k % 3)) % (fw + 80) - 60
             self._put(ctx, ("cloud", k), x, (k * 97) % max(1, fh - 40), 0.8 if w["storm"] else 0.5)
-        if w["storm"] or w.get("rain"):
-            drops = int(60 + 260 * (w["storm"] or 0.5))
+        wet = max(w["storm"] or 0.0, float(w.get("rain") or 0) * 0.6)   # cuánto llueve (0..1): sube y baja de a poco
+        if wet > 0.02:
+            drops = int(260 * wet + 40 * min(1.0, wet * 4))
             pts = [((j * 97.31 - now * 50) % fw, (j * 53.17 + now * 230) % fh) for j in range(drops)]
             pixels(ctx, pts, (0.7, 0.8, 1.0), 0.5, size=(1, 3))
         if w["fog"]:

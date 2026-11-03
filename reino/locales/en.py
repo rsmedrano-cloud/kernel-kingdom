@@ -547,6 +547,7 @@ UI = {
     "menu.video": "Video of the day (narrated)",
     "dialog.video.yes": "Yes, download and make the video",
     "dialog.video.no": "Not now",
+    "menu.studio": "Studio (experimental)",
     "menu.wallpaper": "Wallpaper",
     "toast.wallpaper_on": "Wallpaper on ({monitors}). It starts with your session.",
     "toast.wallpaper_off": "Wallpaper off. The world keeps running.",
