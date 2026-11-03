@@ -1,4 +1,5 @@
 import copy
+import json
 import os
 import tempfile
 import unittest
@@ -77,6 +78,57 @@ class AnnalsTest(unittest.TestCase):
         self.assertIsNone(annals.bard(ch, {"bard": {"enabled": True, "url": "http://127.0.0.1:9", "timeout": 1}}))
 
 
+class BardTest(unittest.TestCase):
+    def serve(self, reply: dict):
+        import http.server
+        import threading
+        seen = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                seen["path"] = self.path
+                seen["auth"] = self.headers.get("Authorization")
+                seen["body"] = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                data = json.dumps(reply).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.shutdown)
+        return f"http://127.0.0.1:{srv.server_port}", seen
+
+    def chapter(self):
+        i18n.set_lang("es")
+        return {"world": "Kernelia", "title": "La Caída de Zenhar", "previously": [],
+                "prose": ["Escuchad la crónica de Kernelia.", "Zenhar se disolvió."]}
+
+    def test_ollama(self):
+        url, seen = self.serve({"response": "Escuchad la crónica de Kernelia. " * 20})
+        text = annals.bard(self.chapter(), {"bard": {"enabled": True, "url": url, "model": "m"}})
+        self.assertTrue(text.startswith("Escuchad"))
+        self.assertEqual(seen["path"], "/api/generate")
+        self.assertIn("Zenhar se disolvió.", seen["body"]["prompt"])          # el borrador ordenado va en el pedido
+
+    def test_openai_compatible_with_key_from_env(self):
+        url, seen = self.serve({"choices": [{"message": {"content": "Escuchad la crónica. " * 20}}]})
+        with mock.patch.dict(os.environ, {"KK_TEST_KEY": "secreto"}):
+            text = annals.bard(self.chapter(), {"bard": {"enabled": True, "provider": "openai", "url": url + "/v1",
+                                                         "model": "m", "api_key_env": "KK_TEST_KEY"}})
+        self.assertTrue(text.startswith("Escuchad"))
+        self.assertEqual(seen["path"], "/v1/chat/completions")
+        self.assertEqual(seen["auth"], "Bearer secreto")
+
+    def test_a_short_answer_is_not_used(self):
+        url, _ = self.serve({"response": "No puedo."})
+        self.assertIsNone(annals.bard(self.chapter(), {"bard": {"enabled": True, "url": url}}))
+
+
 class VideoPartsTest(unittest.TestCase):
     def test_narration_parts_are_joined_with_pauses(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,9 +149,12 @@ class VideoPartsTest(unittest.TestCase):
     def test_voice_downloads_are_announced_before(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"XDG_DATA_HOME": tmp}):
             i18n.set_lang("es")
-            missing = video.missing_downloads({})
-            self.assertEqual(len(missing), 2)
-            self.assertIn("es_ES-davefx-medium", missing[1])
+            missing = video.missing_downloads({})                          # Kokoro: entorno, modelo y voces
+            self.assertEqual(len(missing), 3)
+            self.assertIn("kokoro-v1.0.onnx", missing[1])
+            piper = video.missing_downloads({"video": {"engine": "piper"}})
+            self.assertEqual(len(piper), 2)
+            self.assertIn("es_ES-davefx-medium", piper[1])
 
 
 if __name__ == "__main__":

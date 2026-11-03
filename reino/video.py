@@ -1,10 +1,13 @@
 """El video del día: el capítulo de los Anales narrado sobre el mapa.
 
-La voz es Piper (TTS libre, corre en la CPU, sin internet después de la primera
-descarga): el programa y la voz se bajan una sola vez a data_dir()/voice. Cada
-parte del relato se sintetiza; la cámara va a donde pasó lo que se cuenta y se
-queda ahí mientras dura la frase; los subtítulos se dibujan en cada cuadro; ffmpeg
-junta imagen y voz (con un filtro de "narrador": un poco más grave, con cuerpo).
+La voz es local y corre en la CPU, sin internet después de la primera descarga
+(todo va a data_dir()/voice):
+- Kokoro (por defecto): voces naturales; se instala en su propio entorno de Python
+  (kokoro-venv) para no mezclar onnxruntime con la app.
+- Piper: más liviano y más robótico.
+El texto es el relato del día (o la prosa del cronista, si hay). Cada frase se
+sintetiza; la cámara va al reino, la isla o la región que nombra la frase y se queda
+ahí mientras dura; los subtítulos se dibujan en cada cuadro; ffmpeg junta todo.
 """
 import json
 import os
@@ -22,7 +25,11 @@ from . import annals, i18n, paths, story
 
 PIPER = "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_{arch}.tar.gz"
 VOICES = "https://huggingface.co/rhasspy/piper-voices/resolve/main/{path}"
-DEFAULT_VOICE = {"es": "es_ES-davefx-medium", "en": "en_US-ryan-medium"}
+KOKORO = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/{name}"
+KOKORO_PKG = "kokoro-onnx==0.4.7"
+KOKORO_MODELS = {"full": ("kokoro-v1.0.onnx", 310), "light": ("kokoro-v1.0.int8.onnx", 88)}
+DEFAULT_VOICE = {"kokoro": {"es": "em_alex", "en": "bm_george"},
+                 "piper": {"es": "es_ES-davefx-medium", "en": "en_US-ryan-medium"}}
 W, H, FPS = 1280, 720, 24
 GAP = 0.7                                   # silencio entre partes del relato (s)
 
@@ -37,17 +44,35 @@ def voice_dir() -> Path:
     return d
 
 
+def engine(cfg: dict) -> str:
+    return "piper" if cfg.get("video", {}).get("engine") == "piper" else "kokoro"
+
+
 def voice_name(cfg: dict) -> str:
     vc = cfg.get("video", {})
-    return vc.get(f"voice_{i18n.LANG}") or DEFAULT_VOICE.get(i18n.LANG, DEFAULT_VOICE["en"])
+    defaults = DEFAULT_VOICE[engine(cfg)]
+    return vc.get(f"voice_{i18n.LANG}") or defaults.get(i18n.LANG, defaults["en"])
+
+
+def _kokoro_model(cfg: dict) -> tuple[str, int]:
+    return KOKORO_MODELS["light" if cfg.get("video", {}).get("kokoro_model") == "light" else "full"]
 
 
 def missing_downloads(cfg: dict) -> list[str]:
-    """Lo que falta bajar (para avisar antes): el programa y/o la voz."""
-    out = []
-    if not (voice_dir() / "piper" / "piper").exists():
+    """Lo que falta bajar (para avisar antes)."""
+    out, d = [], voice_dir()
+    if engine(cfg) == "kokoro":
+        if not (d / "kokoro-venv" / "bin" / "python").exists():
+            out.append("Kokoro + onnxruntime (~120 MB)")
+        name, mb = _kokoro_model(cfg)
+        if not (d / name).exists():
+            out.append(f"{name} (~{mb} MB)")
+        if not (d / "voices-v1.0.bin").exists():
+            out.append("voices-v1.0.bin (~27 MB)")
+        return out
+    if not (d / "piper" / "piper").exists():
         out.append("Piper (~25 MB)")
-    if not (voice_dir() / f"{voice_name(cfg)}.onnx").exists():
+    if not (d / f"{voice_name(cfg)}.onnx").exists():
         out.append(f"{voice_name(cfg)} (~60 MB)")
     return out
 
@@ -97,6 +122,29 @@ def ensure_voice(name: str) -> Path:
     return model
 
 
+def ensure_kokoro(cfg: dict) -> tuple[Path, Path, Path]:
+    """El entorno de Kokoro (aparte de la app), el modelo y las voces."""
+    d = voice_dir()
+    py = d / "kokoro-venv" / "bin" / "python"
+    if not py.exists():
+        import sys
+        subprocess.run([sys.executable, "-m", "venv", str(d / "kokoro-venv")], check=True, capture_output=True)
+        r = subprocess.run([str(py), "-m", "pip", "install", "--quiet", "--disable-pip-version-check", KOKORO_PKG],
+                           capture_output=True, text=True)
+        if r.returncode:
+            shutil.rmtree(d / "kokoro-venv", ignore_errors=True)
+            raise VideoError("no se pudo instalar Kokoro: " + (r.stderr.strip().splitlines() or ["?"])[-1])
+    name, _ = _kokoro_model(cfg)
+    for f in (name, "voices-v1.0.bin"):
+        if not (d / f).exists():
+            _download(KOKORO.format(name=f), d / f)
+    # el script se copia a la carpeta de voces y corre desde ahí: así ningún módulo de
+    # la app (config.py, update.py...) puede tapar a uno de Kokoro
+    job = d / "kokoro_job.py"
+    job.write_text((Path(__file__).parent / "tts_kokoro.py").read_text(encoding="utf-8"), encoding="utf-8")
+    return py, d / name, d / "voices-v1.0.bin"
+
+
 def _encoder() -> tuple[list[str], str]:
     """El mejor encoder disponible: H.264 (mp4), si no VP9 (webm), si no AV1 (mp4)."""
     out = subprocess.run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
@@ -112,20 +160,73 @@ def _encoder() -> tuple[list[str], str]:
     raise VideoError("ffmpeg no tiene un encoder de video que sirva (x264, VP9 o AV1)")
 
 
-def _synth(exe: Path, model: Path, text: str, out: Path) -> float:
-    """Una parte del relato a WAV (con el filtro de narrador). Devuelve la duración."""
-    raw = out.with_suffix(".raw.wav")
-    r = subprocess.run([str(exe), "--model", str(model), "--output_file", str(raw), "--length_scale", "1.08",
-                        "--sentence_silence", "0.35"], input=text.encode(), capture_output=True)
-    if r.returncode or not raw.exists():
-        raise VideoError("Piper no pudo sintetizar la voz")
-    rate = json.loads(model.with_suffix(".onnx.json").read_text())["audio"]["sample_rate"]
-    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-af",
-                    f"asetrate={rate}*0.93,aresample=44100,atempo=1.04,bass=g=4:f=110,"
-                    f"aecho=0.8:0.6:45|90:0.15|0.06", "-ac", "1", "-ar", "44100", str(out)], check=True)
+def _finish(raw: Path, out: Path, piper_rate: int | None = None) -> float:
+    """A mono 44.1 kHz, con un toque de narrador (con Piper, además, un poco más grave)."""
+    af = "aresample=44100,bass=g=2:f=110,aecho=0.8:0.5:40:0.06"
+    if piper_rate:
+        af = f"asetrate={piper_rate}*0.93,aresample=44100,atempo=1.04,bass=g=4:f=110,aecho=0.8:0.6:45|90:0.15|0.06"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-af", af, "-ac", "1", "-ar", "44100",
+                    str(out)], check=True)
     raw.unlink(missing_ok=True)
     with wave.open(str(out)) as w:
         return w.getnframes() / w.getframerate()
+
+
+def synthesize(texts: list[str], tmp: Path, cfg: dict, progress=print) -> list[tuple[Path, float]]:
+    """Cada texto a un WAV (mono 44.1 kHz). Devuelve [(wav, duración)]."""
+    out = []
+    if engine(cfg) == "kokoro":
+        py, model, voices = ensure_kokoro(cfg)
+        voice = voice_name(cfg)
+        lang = "es" if i18n.LANG == "es" else ("en-gb" if voice.startswith("b") else "en-us")
+        job = {"model": str(model), "voices": str(voices), "voice": voice, "lang": lang,
+               "speed": cfg.get("video", {}).get("speed", 0.92),
+               "parts": [{"text": t, "out": str(tmp / f"{k:02d}.raw.wav")} for k, t in enumerate(texts)]}
+        progress(i18n.ui("video.speaking", n=len(texts), total=len(texts)))
+        r = subprocess.run([str(py), "-I", str(voice_dir() / "kokoro_job.py")], input=json.dumps(job),
+                           capture_output=True, text=True, cwd=str(voice_dir()))
+        if r.returncode:
+            raise VideoError("Kokoro no pudo sintetizar: " + (r.stderr.strip().splitlines() or ["?"])[-1])
+        for k in range(len(texts)):
+            wav = tmp / f"{k:02d}.wav"
+            out.append((wav, _finish(tmp / f"{k:02d}.raw.wav", wav)))
+        return out
+    exe = ensure_piper()
+    model = ensure_voice(voice_name(cfg))
+    rate = json.loads(model.with_suffix(".onnx.json").read_text())["audio"]["sample_rate"]
+    for k, text in enumerate(texts):
+        progress(i18n.ui("video.speaking", n=k + 1, total=len(texts)))
+        raw = tmp / f"{k:02d}.raw.wav"
+        r = subprocess.run([str(exe), "--model", str(model), "--output_file", str(raw), "--length_scale", "1.08",
+                            "--sentence_silence", "0.35"], input=text.encode(), capture_output=True)
+        if r.returncode or not raw.exists():
+            raise VideoError("Piper no pudo sintetizar la voz")
+        wav = tmp / f"{k:02d}.wav"
+        out.append((wav, _finish(raw, wav, rate)))
+    return out
+
+
+def narration(day: str, entries: list[dict], state: dict, cfg: dict) -> tuple[dict, list[dict]]:
+    """El capítulo y lo que se dice: el título, y después el relato frase por frase (la
+    prosa del cronista si la hay), cada frase con el lugar que nombra (reino, isla o región)."""
+    ch = annals.chapter(day, entries)
+    text = annals.bard_text(day) or annals.bard(ch, cfg) or "\n\n".join(ch["prose"])
+    places = {}
+    for r in state.get("regions") or []:
+        if r.get("name"):
+            places[r["name"]] = tuple(r["c"])
+    for i in state.get("islands") or []:
+        if i.get("c"):
+            places[i["name"]] = tuple(i["c"])
+    for f in state.get("factions", []):
+        if f.get("alive") or f["realm"] not in places:
+            places[f["realm"]] = tuple(f["capital"])
+    names = sorted(places, key=len, reverse=True)               # "Zenharia" antes que "Zenhar"
+    parts = [{"text": i18n.words("annals_chapter").format(n=ch["n"], title=ch["title"]) + ".", "where": None}]
+    for sentence in annals._sentences(text):
+        where = next((places[n] for n in names if n in sentence), None)
+        parts.append({"text": story.scrub(sentence), "where": where})
+    return ch, parts
 
 
 def _join(parts: list[Path], gap: float, out: Path):
@@ -156,11 +257,8 @@ def make(day: str | None = None, out_dir: Path | None = None, cfg: dict | None =
         state = json.loads(paths.state_file().read_text())
     except (OSError, ValueError):
         raise VideoError("no encuentro el estado del mundo (¿está corriendo el daemon?)")
-    ch = annals.chapter(day, entries)
-    parts = [dict(p, text=story.scrub(p["text"])) for p in ch["narration"]]
+    ch, parts = narration(day, entries, state, cfg)
     progress(i18n.ui("video.voice"))
-    exe = ensure_piper()
-    model = ensure_voice(voice_name(cfg))
     encoder, ext = _encoder()
     out_dir = out_dir or annals.folder()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -169,15 +267,12 @@ def make(day: str | None = None, out_dir: Path | None = None, cfg: dict | None =
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         wavs, timeline, t = [], [], GAP
-        for k, part in enumerate(parts):
-            progress(i18n.ui("video.speaking", n=k + 1, total=len(parts)))
-            wav = tmp / f"{k:02d}.wav"
-            dur = _synth(exe, model, part["text"], wav)
+        for part, (wav, dur) in zip(parts, synthesize([p["text"] for p in parts], tmp, cfg, progress)):
             wavs.append(wav)
             timeline.append((t, t + dur, part))
             t += dur + GAP
-        narration = tmp / "narration.wav"
-        _join(wavs, GAP, narration)
+        voice_wav = tmp / "narration.wav"
+        _join(wavs, GAP, voice_wav)
         total = t + 1.5
 
         # imagen: la cámara viaja a donde pasó cada cosa y se queda mientras se cuenta
@@ -200,7 +295,7 @@ def make(day: str | None = None, out_dir: Path | None = None, cfg: dict | None =
         frame = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
         ctx = cairo.Context(frame)
         cmd = ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{W}x{H}",
-               "-r", str(FPS), "-i", "-", "-i", str(narration), *encoder, "-shortest", str(out)]
+               "-r", str(FPS), "-i", "-", "-i", str(voice_wav), *encoder, "-shortest", str(out)]
         ff = subprocess.Popen(cmd, stdin=subprocess.PIPE)
         frames = int(total * FPS)
         pan, zoom = [0.0, 0.0], 0
