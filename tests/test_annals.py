@@ -36,15 +36,17 @@ class AnnalsTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_events_keep_their_proper_names(self):
-        e = next(e for e in self.world.chronicle.entries if e.get("k") == "war.declare")
-        self.assertEqual(e["p"]["a"], self.world.factions["chrome"]["realm"])
+        a, b = self.world.factions["chrome"]["realm"], self.world.factions["firefox"]["realm"]
+        # la que declaró el test (puede haber estallado otra antes, por azar)
+        e = next(e for e in self.world.chronicle.entries if e.get("k") == "war.declare"
+                 and (e.get("p") or {}).get("a") == a and (e.get("p") or {}).get("b") == b)
         self.assertIn("war", e["p"])
 
     def test_chapter_has_a_title_sections_and_an_epilogue(self):
         entries = self.world.chronicle.entries
         ch = annals.chapter("2026-11-03", entries, self.world.to_dict(), n=3)
-        war = next(e for e in entries if e.get("k") == "war.declare")["p"]["war"]
-        self.assertEqual(ch["title"], war[:1].upper() + war[1:])                 # el día lo titula la guerra
+        wars = {e["p"]["war"] for e in entries if e.get("k") in ("war.declare", "war.start") and "p" in e}
+        self.assertIn(ch["title"], {w[:1].upper() + w[1:] for w in wars})         # el día lo titula una guerra
         self.assertIn("war", [s["theme"] for s in ch["sections"]])
         self.assertTrue(any("capítulo 3" in t for t in ch["epilogue"]))
         self.assertLessEqual(len(ch["narration"]), 12)
