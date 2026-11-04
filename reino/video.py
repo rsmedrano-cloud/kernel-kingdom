@@ -44,6 +44,28 @@ def voice_dir() -> Path:
     return d
 
 
+def downloads_mb() -> int:
+    """Lo que ocupan las voces y modelos bajados (0 si no hay nada)."""
+    d = paths.data_dir() / "voice"
+    if not d.is_dir() or d.is_symlink():
+        return 0
+    total = 0
+    for root, _, files in os.walk(d):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(root, f)).st_size
+            except OSError:
+                pass
+    return round(total / 1e6)
+
+
+def remove_downloads():
+    """Borra voces, modelos y el entorno de Kokoro; el próximo video los vuelve a bajar."""
+    d = paths.data_dir() / "voice"
+    if d.is_dir() and not d.is_symlink():
+        shutil.rmtree(d)
+
+
 def engine(cfg: dict) -> str:
     return "piper" if cfg.get("video", {}).get("engine") == "piper" else "kokoro"
 

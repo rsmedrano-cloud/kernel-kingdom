@@ -57,6 +57,16 @@ def new_world(world: World, cfg: dict) -> World:
     return fresh
 
 
+def write_chapters(world: World):
+    """Los capítulos de los Anales que faltan hasta ayer, en otro hilo: con el bardo
+    (ollama) puede tardar y el mundo no se detiene."""
+    if not story.missing_days():
+        return
+    snapshot = json.loads(json.dumps(world.to_dict(full=False)))   # copia: el hilo no toca el mundo vivo
+    threading.Thread(target=story.catch_up, args=(world.kingdom, world.lore.era_name(world.era), snapshot),
+                     daemon=True).start()
+
+
 def build_state(world: World, snap: dict, events: list[dict], interval: float) -> dict:
     state = world.to_state()
     state.update(
@@ -81,6 +91,8 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
 
+    os.umask(0o077)                                       # lo que escribe el daemon es solo del usuario
+    paths.make_private()
     cfg = config.load(args.config)
     i18n.set_lang(cfg.get("language", "auto"))
     interval = args.interval or cfg["daemon"]["interval"]
@@ -125,6 +137,7 @@ def main():
         print(f"kernel-kingdom daemon: {added} entradas de hoy recuperadas para la historia del día", file=sys.stderr)
     notifier = Notifier(cfg)
     arch = Archipelago(cfg)                                # máquinas remotas (vacío = nada)
+    catch_up_pending = True                                # si la PC durmió a la medianoche, el capítulo quedó sin escribir
     while not stop.is_set():
         t0 = time.monotonic()
         notifier.pump()
@@ -148,11 +161,9 @@ def main():
         notifier.push(fresh, world.kingdom, cli._running("window"))
         timelapse.record(world)                            # foto de las fronteras cada 10 min
         today = time.strftime("%Y-%m-%d")
-        if today != day:                                   # cambió el día: se escribe el relato de ayer
-            # en otro hilo: con el bardo (ollama) puede tardar y el mundo no se detiene
-            snapshot = json.loads(json.dumps(world.to_dict(full=False)))   # copia: el hilo no toca el mundo vivo
-            threading.Thread(target=story.export, args=(day, world.kingdom, world.lore.era_name(world.era), snapshot),
-                             daemon=True).start()
+        if today != day or catch_up_pending:               # cambió el día (o recién arrancamos): capítulos que faltan
+            catch_up_pending = False
+            write_chapters(world)
             day = today
         state = build_state(world, snap, events, interval)
         state["islands"] = arch.summary(world)

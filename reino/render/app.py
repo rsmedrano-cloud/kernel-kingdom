@@ -107,6 +107,7 @@ class Wallpaper:
         self.interactive = rc.get("interactive", True)
         self.state_path = Path(args.state)
         self.painter = Painter(cfg["daemon"]["interval"], rc.get("hemisphere", "auto"))
+        self.painter.on_menu_open = self._measure_voices
         self.painter.show_chronicle = rc.get("show_chronicle", True)
         self.painter.show_powers = rc.get("show_powers", True)
         self.painter.show_labels = rc.get("labels", False)
@@ -315,6 +316,11 @@ class Wallpaper:
         elif action[0] == "video":
             p.toggle_menu(False)
             self._video(confirmed=False)
+        elif action[0] == "voice_clear":
+            p.toggle_menu(False)
+            p.show_dialog(ui("menu.studio"), [(ui("dialog.voice_clear.yes"), "voice_clear_yes"),
+                                             (ui("dialog.video.no"), "close")],
+                          ui("dialog.voice_clear.note", mb=p.voice_mb))
         elif action[0] == "timelapse":
             p.toggle_menu(False)
             self._export_timelapse()
@@ -383,6 +389,10 @@ class Wallpaper:
         self.painter.show_dialog(ui("dialog.away.title", time=span), [(ui("dialog.away.ok"), "close")],
                                  lines=lines)
 
+    def _measure_voices(self):
+        from .. import video
+        self.painter.voice_mb = video.downloads_mb()
+
     def _dialog_action(self, action: str, now: float):
         self.painter.close_dialog()
         if action in ("wp_yes", "wp_no"):
@@ -391,6 +401,14 @@ class Wallpaper:
                 self._set_wallpaper(True)
         elif action == "video_yes":
             self._video(confirmed=True)
+        elif action == "voice_clear_yes":
+            from .. import video
+            try:
+                video.remove_downloads()
+                self.painter.voice_mb = 0
+                self.painter.toast(ui("voice_clear.done"), now, secs=5)
+            except OSError as e:
+                self.painter.toast(ui("video.failed", detail=e), now, ok=False, secs=8)
         elif action == "relaunch":
             from .. import cli
             cli.relaunch_window()
