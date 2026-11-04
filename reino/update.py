@@ -58,8 +58,30 @@ def _offline_build() -> bool:
         return False
 
 
+RELEASE_PAGE = f"{REPO}/releases/latest"
+
+
+def packaged() -> str | None:
+    """Cómo se instaló, si vino en un paquete: "deb", "rpm" o "arch" (los del release).
+    Lo deja el empaquetado en reino/PACKAGED. None: install.sh, pip o un clon de git."""
+    try:
+        kind = (Path(__file__).resolve().parent / "PACKAGED").read_text().strip()
+    except OSError:
+        return None
+    return kind if kind in ("arch", "deb", "rpm") else None
+
+
+def packaged_hint(kind: str) -> str:
+    """Qué hacer para actualizar un paquete (lo maneja la distro, no la app)."""
+    from .i18n import ui
+    return ui(f"update.packaged.{kind}", url=RELEASE_PAGE)
+
+
 def install() -> tuple[bool, str]:
     """Baja e instala la última versión. Devuelve (ok, detalle)."""
+    kind = packaged()
+    if kind:                                     # los archivos son del gestor de paquetes: no se tocan
+        return False, packaged_hint(kind)
     if (ROOT / ".git").exists() and shutil.which("git"):
         cmds = [["git", "-C", str(ROOT), "pull", "--ff-only"]]
     else:

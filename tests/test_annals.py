@@ -115,6 +115,7 @@ class BardTest(unittest.TestCase):
                 pass
         srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
+        self.addCleanup(srv.server_close)
         self.addCleanup(srv.shutdown)
         return f"http://127.0.0.1:{srv.server_port}", seen
 

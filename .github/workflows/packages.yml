@@ -1,0 +1,81 @@
+name: packages
+
+# Builds .deb, .rpm and the Arch package for every pull request (and checks they
+# install); on a published release, attaches them to it (with the PKGBUILD for Arch).
+on:
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.kind }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - kind: deb
+            image: docker.io/library/debian:trixie
+            deps: apt-get update -qq && apt-get install -y -qq dpkg-dev
+            build: packaging/deb/build.sh
+            install: apt-get install -y -qq ./dist/kernel-kingdom_*_all.deb
+          - kind: rpm
+            image: registry.fedoraproject.org/fedora:43
+            deps: dnf install -y -q rpm-build pyproject-rpm-macros python3-devel desktop-file-utils python3-psutil python3-cairo python3-pillow python3-setuptools python3-wheel python3-pip
+            build: packaging/rpm/build.sh
+            install: dnf install -y -q ./dist/kernel-kingdom-*.rpm
+          - kind: arch
+            image: docker.io/library/archlinux:latest
+            deps: pacman -Syu --noconfirm -q base-devel python python-gobject python-cairo gtk4 python-psutil python-build python-installer python-setuptools python-wheel python-pillow && useradd -m builder
+            build: packaging/arch/build.sh builder "${{ github.event.release.tag_name }}"
+            install: pacman -U --noconfirm dist/kernel-kingdom-*.pkg.tar.zst
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build tools
+        run: ${{ matrix.deps }}
+      - name: Build
+        env:
+          KK_PERF_SLACK: "10"
+        run: ${{ matrix.build }}
+      - name: Install and try it
+        run: |
+          ${{ matrix.install }}
+          cd / && kernel-kingdom --help > /dev/null
+          python3 -c "from reino import update; k = update.packaged(); print('packaged:', k); assert k"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.kind }}
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/PKGBUILD
+            dist/.SRCINFO
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  attach:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -A out
+          gh release upload "${{ github.event.release.tag_name }}" out/*.deb out/*.rpm out/PKGBUILD \
+            --repo "${{ github.repository }}" --clobber
+          cp out/.SRCINFO SRCINFO && gh release upload "${{ github.event.release.tag_name }}" SRCINFO \
+            --repo "${{ github.repository }}" --clobber

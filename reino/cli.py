@@ -188,6 +188,9 @@ def cmd_update(args):
         print(ui("cli.update.none") if update.latest() else ui("cli.update.offline"))
         return 0
     version = new or update.latest() or __version__        # con --force: el último release publicado
+    if update.packaged():                                  # lo actualiza el gestor de paquetes
+        print(f"{version}: {update.packaged_hint(update.packaged())}")
+        return 0
     print(ui("cli.update.installing", version=version))
     ok, detail, restarted = apply_update()
     if not ok:

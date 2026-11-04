@@ -23,6 +23,19 @@ your system (`kernel-kingdom doctor`) and enables autostart with the session
 distro: if any is missing, the installer shows the exact command and offers to run it
 (on Fedora Atomic it layers them with `rpm-ostree`; reboot and run it again).
 
+### Or as a package
+
+Every [release](https://github.com/rsmedrano-cloud/kernel-kingdom/releases/latest) has
+packages that pull in their dependencies; updates then come through your package manager.
+
+```bash
+sudo apt install ./kernel-kingdom_*_all.deb        # Debian 13+, Ubuntu 24.04+ (24.04: window only, no gtk4-layer-shell)
+sudo dnf install ./kernel-kingdom-*.noarch.rpm     # Fedora 43
+makepkg -si                                        # Arch: in a folder with the release's PKGBUILD
+```
+
+Then `kernel-kingdom install` adds autostart with your session (or open it from the app menu).
+
 ```bash
 kernel-kingdom            # wallpaper on every monitor, in the background (the terminal is free right away)
 kernel-kingdom window     # open the window: zoom, powers, realms, chronicle (also from the app launcher)
@@ -243,7 +256,7 @@ wallpaper is hidden. Tests: `python3 -m unittest discover -s tests`.
 lands through pull requests, where the test suite runs on Fedora and Debian
 (`python3 -m unittest discover -s tests`). Updates (`kernel-kingdom update` and
 the window's Menu) only offer **published releases**, so nothing half-done ever
-reaches an installed copy. The protocol for lab machines is in
+reaches an installed copy. `packaging/` builds the .deb, .rpm and Arch package; the *packages* workflow tries them on every pull request and attaches them to each release (bump the version in `pyproject.toml`, `reino/__init__.py`, the spec and the PKGBUILD together: a test checks it). The protocol for lab machines is in
 [docs/remote-protocol.md](docs/remote-protocol.md).
 
 ## License
