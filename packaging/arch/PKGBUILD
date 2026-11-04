@@ -1,6 +1,6 @@
 # Maintainer: rsmedrano-cloud <143425037+rsmedrano-cloud@users.noreply.github.com>
 # The release workflow fills in pkgver and sha256sums and attaches this file to
-# each GitHub release, ready to push to the AUR.
+# each GitHub release: download it and run makepkg -si.
 pkgname=kernel-kingdom
 pkgver=0.6.2
 pkgrel=1
@@ -32,7 +32,7 @@ package() {
   python -m installer --destdir="$pkgdir" dist/*.whl
   local site
   site=$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
-  echo aur > "$pkgdir$site/reino/PACKAGED"      # the in-app updater leaves it to the AUR helper
+  echo arch > "$pkgdir$site/reino/PACKAGED"      # the in-app updater leaves it to pacman
   install -Dm644 packaging/dev.kernelkingdom.Window.desktop -t "$pkgdir/usr/share/applications/"
   install -Dm644 assets/kernel-kingdom.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/kernel-kingdom.png"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

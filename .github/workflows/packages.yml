@@ -1,7 +1,7 @@
 name: packages
 
 # Builds .deb, .rpm and the Arch package for every pull request (and checks they
-# install); on a published release, attaches them to it with the AUR PKGBUILD.
+# install); on a published release, attaches them to it (with the PKGBUILD for Arch).
 on:
   pull_request:
   release:
@@ -27,7 +27,7 @@ jobs:
           - kind: rpm
             image: registry.fedoraproject.org/fedora:43
             deps: dnf install -y -q rpm-build pyproject-rpm-macros python3-devel desktop-file-utils python3-psutil python3-cairo python3-pillow python3-setuptools python3-wheel python3-pip
-            build: packaging/rpm/build.sh rpm
+            build: packaging/rpm/build.sh
             install: dnf install -y -q ./dist/kernel-kingdom-*.rpm
           - kind: arch
             image: docker.io/library/archlinux:latest

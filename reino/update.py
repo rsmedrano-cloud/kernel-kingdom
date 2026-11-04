@@ -62,13 +62,13 @@ RELEASE_PAGE = f"{REPO}/releases/latest"
 
 
 def packaged() -> str | None:
-    """Cómo se instaló, si vino en un paquete de la distro: "aur", "copr", "deb" o "rpm".
+    """Cómo se instaló, si vino en un paquete: "deb", "rpm" o "arch" (los del release).
     Lo deja el empaquetado en reino/PACKAGED. None: install.sh, pip o un clon de git."""
     try:
         kind = (Path(__file__).resolve().parent / "PACKAGED").read_text().strip()
     except OSError:
         return None
-    return kind if kind in ("aur", "copr", "deb", "rpm") else None
+    return kind if kind in ("arch", "deb", "rpm") else None
 
 
 def packaged_hint(kind: str) -> str:

@@ -1,6 +1,4 @@
-# Fedora / COPR. kk_channel tells the in-app updater who owns the files:
-# "copr" (default, updates with dnf) or "rpm" (the file attached to a GitHub release).
-%{!?kk_channel: %global kk_channel copr}
+# Fedora: the .rpm attached to each GitHub release.
 
 Name:           kernel-kingdom
 Version:        0.6.2
@@ -44,7 +42,7 @@ chronicle, and can show the machines of your homelab as islands.
 %install
 %pyproject_install
 %pyproject_save_files reino
-echo %{kk_channel} > %{buildroot}%{python3_sitelib}/reino/PACKAGED
+echo rpm > %{buildroot}%{python3_sitelib}/reino/PACKAGED
 desktop-file-install --dir=%{buildroot}%{_datadir}/applications packaging/dev.kernelkingdom.Window.desktop
 install -Dpm644 assets/kernel-kingdom.png %{buildroot}%{_datadir}/icons/hicolor/256x256/apps/kernel-kingdom.png
 
