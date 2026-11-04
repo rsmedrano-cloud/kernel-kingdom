@@ -621,7 +621,17 @@ class Wallpaper:
 
     def _do_update(self):
         import threading
-        from .. import cli
+        from .. import cli, update
+        kind = update.packaged()
+        if kind:                                   # paquete de la distro: se actualiza por ahí, no desde acá
+            if kind in ("deb", "rpm"):
+                try:
+                    Gio.AppInfo.launch_default_for_uri(update.RELEASE_PAGE, None)
+                except GLib.Error:
+                    pass
+            self.painter.toast(update.packaged_hint(kind), time.monotonic(), secs=15)
+            self._render()
+            return
         version = self.painter.update_available or "main"
         self.painter.toast(ui("update.working", version=version), time.monotonic(), secs=30)
         self._render()

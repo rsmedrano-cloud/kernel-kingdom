@@ -1,0 +1,39 @@
+# Maintainer: rsmedrano-cloud <143425037+rsmedrano-cloud@users.noreply.github.com>
+# The release workflow fills in pkgver and sha256sums and attaches this file to
+# each GitHub release, ready to push to the AUR.
+pkgname=kernel-kingdom
+pkgver=0.6.2
+pkgrel=1
+pkgdesc="Your computer as a pixel-art kingdom: a Wayland live wallpaper / idle game that grows from your system"
+arch=('any')
+url="https://github.com/rsmedrano-cloud/kernel-kingdom"
+license=('MIT')
+depends=('python' 'python-gobject' 'python-cairo' 'gtk4' 'python-psutil')
+makedepends=('python-build' 'python-installer' 'python-setuptools' 'python-wheel')
+checkdepends=('python-pillow')
+optdepends=('gtk4-layer-shell: live wallpaper mode (Wayland)'
+            'python-pillow: faster timelapse GIFs'
+            'ffmpeg: narrated video of the day')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  python -m build --wheel --no-isolation
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  KK_PERF_SLACK=10 python -m unittest discover -s tests
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  python -m installer --destdir="$pkgdir" dist/*.whl
+  local site
+  site=$(python -c 'import sysconfig; print(sysconfig.get_path("purelib"))')
+  echo aur > "$pkgdir$site/reino/PACKAGED"      # the in-app updater leaves it to the AUR helper
+  install -Dm644 packaging/dev.kernelkingdom.Window.desktop -t "$pkgdir/usr/share/applications/"
+  install -Dm644 assets/kernel-kingdom.png "$pkgdir/usr/share/icons/hicolor/256x256/apps/kernel-kingdom.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

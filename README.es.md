@@ -23,6 +23,19 @@ revisa tu sistema (`kernel-kingdom doctor`) y lo deja arrancando con la sesión
 falta algo, el instalador te muestra el comando exacto y se ofrece a correrlo
 (en Fedora Atomic los agrega con `rpm-ostree`; reiniciás y lo volvés a correr).
 
+### O como paquete
+
+Cada [release](https://github.com/rsmedrano-cloud/kernel-kingdom/releases/latest) trae
+paquetes que instalan sus dependencias; después se actualiza con el gestor de tu distro.
+
+```bash
+sudo apt install ./kernel-kingdom_*_all.deb        # Debian 13+, Ubuntu 24.04+ (24.04: solo ventana, sin gtk4-layer-shell)
+sudo dnf install ./kernel-kingdom-*.noarch.rpm     # Fedora 43
+makepkg -si                                        # Arch: en una carpeta con el PKGBUILD del release
+```
+
+Después, `kernel-kingdom install` lo deja arrancando con la sesión (o abrilo desde el menú de aplicaciones).
+
 ```bash
 kernel-kingdom            # fondo de pantalla en todos los monitores, en segundo plano (la terminal queda libre)
 kernel-kingdom window     # abre la ventana: zoom, poderes, reinos, crónica (también desde el lanzador)
@@ -246,7 +259,7 @@ pull request, donde corren los tests en Fedora y Debian
 (`python3 -m unittest discover -s tests`). Las actualizaciones (`kernel-kingdom update`
 y el Menú de la ventana) solo ofrecen **releases publicados**, así nada a medio hacer
 le llega a una instalación. El protocolo de las máquinas del lab está en
-[docs/remote-protocol.md](docs/remote-protocol.md).
+[docs/remote-protocol.md](docs/remote-protocol.md). `packaging/` arma el .deb, el .rpm y el paquete de Arch; el workflow *packages* los prueba en cada pull request y los adjunta a cada release (la versión se sube junta en `pyproject.toml`, `reino/__init__.py`, el spec y el PKGBUILD: un test lo controla).
 
 ## Licencia
 

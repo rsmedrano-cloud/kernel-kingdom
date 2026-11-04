@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Kernel Kingdom
+Comment=Your computer as a pixel-art kingdom
+Comment[es]=Tu computadora como un reino en pixel art
+Exec=kernel-kingdom window
+Icon=kernel-kingdom
+Terminal=false
+Categories=Game;Simulation;
+StartupWMClass=dev.kernelkingdom.Window
+Keywords=wallpaper;kingdom;reino;system;monitor;
