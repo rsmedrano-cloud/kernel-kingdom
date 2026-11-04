@@ -111,6 +111,7 @@ def main():
         return snapshot(args, cfg)
     if not args.windowed:
         _ensure_layer_shell_preload()
+    paths.make_private()
     from .app import run
     run(args, cfg)
 

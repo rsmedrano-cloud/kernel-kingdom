@@ -10,6 +10,8 @@ import getpass
 import json
 import re
 import socket
+import sys
+import threading
 import time
 from collections import Counter
 from pathlib import Path
@@ -166,3 +168,37 @@ def export(day: str | None = None, kingdom: str | None = None, era: str = "",
     md.write_text((src / f"{day}.md").read_text(encoding="utf-8"), encoding="utf-8")
     txt.write_text((src / f"{day}.txt").read_text(encoding="utf-8"), encoding="utf-8")
     return md, txt
+
+
+_catching_up = threading.Lock()
+_DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def missing_days(today: str | None = None, limit: int = 14) -> list[str]:
+    """Días con crónica archivada pero sin capítulo en los Anales (la PC estaba apagada
+    a la medianoche, o el daemon no corría). Los últimos `limit`, del más viejo al más nuevo."""
+    from . import annals
+    today = today or time.strftime("%Y-%m-%d")
+    folder = paths.data_dir() / "chronicle"
+    index = annals._index()
+    days = sorted(f.stem for f in folder.glob("*.jsonl") if _DAY.fullmatch(f.stem)) if folder.exists() else []
+    return [d for d in days if d < today and d not in index][-limit:]
+
+
+def catch_up(kingdom: str | None = None, era: str = "", world: dict | None = None,
+             today: str | None = None) -> list[str]:
+    """Escribe, en orden, los capítulos que faltan hasta ayer. Lo llama el daemon al
+    arrancar y al cambiar el día; si ya hay otro ocupándose, no hace nada."""
+    if not _catching_up.acquire(blocking=False):
+        return []
+    try:
+        done = []
+        for day in missing_days(today):
+            try:
+                if export(day, kingdom, era, world):
+                    done.append(day)
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                print(f"kernel-kingdom: no pude escribir el capítulo de {day}: {e}", file=sys.stderr)
+        return done
+    finally:
+        _catching_up.release()

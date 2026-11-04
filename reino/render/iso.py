@@ -1133,6 +1133,8 @@ class Painter:
         self.confirm_new_until = 0.0
         self.wallpaper_on = False
         self.update_available: str | None = None
+        self.voice_mb = 0                    # MB de voces del Estudio (lo mide la ventana al abrir el menú)
+        self.on_menu_open = None
         self.dialog: dict | None = None    # ventana de diálogo (p.ej. la pregunta de bienvenida)
         self.dialog_panel = None
         self._dialog_rows: list = []
@@ -2050,6 +2052,8 @@ class Painter:
                 add(f"  {k + 1 if k < 9 else ' '} {names[key][0]:<10} {price}", col, ("power", key))
         add(ui("menu.studio"), GOLD, None)
         add(f"  {ui('menu.video')}", TEXT, ("video",))
+        if self.voice_mb:
+            add(f"  {ui('menu.voice_clear', mb=self.voice_mb)}", TEXT, ("voice_clear",))
         add(ui("menu.world"), GOLD, None)
         if self.update_available:
             add(f"  * {ui('menu.update', version=self.update_available)}", rgb("#7fd06a"), ("update",))
@@ -2094,6 +2098,8 @@ class Painter:
 
     def toggle_menu(self, open_: bool | None = None):
         self.menu_open = (not self.menu_open) if open_ is None else open_
+        if self.menu_open and self.on_menu_open:
+            self.on_menu_open()
         self._ui_dirty = True
 
     def toggle_view(self, key: str):

@@ -67,6 +67,19 @@ class AnnalsTest(unittest.TestCase):
         self.assertIn("Capítulo 1:", book)
         self.assertIn("Capítulo 2:", book)
 
+    def test_days_slept_through_midnight_get_their_chapter(self):
+        import datetime as dt
+        entries = self.world.chronicle.entries
+        half = len(entries) // 2
+        for k, part in enumerate((entries[:half], entries[half:])):   # dos días con crónica, sin capítulo
+            t = dt.datetime(2026, 11, 2 + k, 12).timestamp()
+            story.archive([dict(e, t=t) for e in part])
+        self.assertEqual(story.missing_days("2026-11-05"), ["2026-11-02", "2026-11-03"])
+        self.assertEqual(story.catch_up(world=self.world.to_dict(), today="2026-11-05"), ["2026-11-02", "2026-11-03"])
+        index = annals._index()
+        self.assertEqual([index[d]["n"] for d in ("2026-11-02", "2026-11-03")], [1, 2])
+        self.assertEqual(story.catch_up(today="2026-11-05"), [])                # ya están: no se reescriben
+
     def test_repetitive_events_are_summed_up(self):
         entries = [{"t": k, "tick": k, "kind": "guerra", "k": "battle", "text": f"Batalla {k}."} for k in range(30)]
         ch = annals.chapter("2026-11-03", entries, {})
